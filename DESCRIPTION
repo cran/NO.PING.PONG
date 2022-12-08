@@ -1,8 +1,8 @@
 Package: NO.PING.PONG
 Type: Package
 Title: Incorporating Previous Findings When Evaluating New Data
-Version: 0.1.4
-Date: 2021-07-02
+Version: 0.1.6
+Date: 2022-12-08
 Author: Brian P. O'Connor 
 Maintainer: Brian P. O'Connor  <brian.oconnor@ubc.ca>
 Description: Functions for revealing what happens when effect size estimates 
@@ -15,12 +15,12 @@ Description: Functions for revealing what happens when effect size estimates
     findings, which often results in a back and forth ping-pong of conclusions 
     when evaluating a sequence of studies.
     O'Connor & Ermacora (2021, <doi:10.3758/bf03200807>).
-Imports: stats, metafor, MCMCglmm, MASS
+Imports: stats, metafor, MCMCglmm, MASS, utils
 Suggests: lattice
 LazyLoad: yes
 LazyData: yes
 License: GPL (>= 2)
 NeedsCompilation: no
-Packaged: 2021-07-02 09:53:11 UTC; brianoconnor
+Packaged: 2022-12-08 11:57:23 UTC; brianoconnor
 Repository: CRAN
-Date/Publication: 2021-07-05 08:00:02 UTC
+Date/Publication: 2022-12-08 12:22:34 UTC

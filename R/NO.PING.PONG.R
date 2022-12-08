@@ -1,25 +1,31 @@
  
 
-NO.PING.PONG <- function(donnes, ES_type_IN=NULL, ES_type_OUT='r', 
-                         rma_method='REML',
-                         Bayes_type = c('Schmidt_Raju', 'generated', 'raw'), 
-                         prior_type='MA', CI = 95,
+NO.PING.PONG <- function(donnes, 
+                         ES_type_IN = NULL, ES_type_OUT = 'r', 
+                         rawdata_type = 'for_correl', 
+                         rma_method = 'REML',
+                         Bayes_type = c('Schmidt_Raju'), 
+                         prior_type = 'META', CI = 95,
                          ES = NULL, N = NULL, vi = NULL,
                          grp1_mn = NULL, grp1_sd = NULL, grp1_n = NULL, 
                          grp2_mn = NULL, grp2_sd = NULL, grp2_n = NULL, 
                          gvar_type_OUT = 'd',
-                         nitt=53000, burnin=3000, thin=10, verbose=TRUE) {
+                         paired_samples_ES_type = NULL,
+                         funnel_plot=FALSE, funnel_plot_type='png', funnel_plot_title=NULL,
+                         nitt = 53000, burnin = 3000, thin = 10, 
+                         verbose = TRUE) {
 
 
-# get the object name of donnes, to be used in the name of the saved plot file
-titre <- deparse(substitute(donnes))
+if (is.null(ES_type_IN))              ES_type_IN <- 'unspecified'
+if (is.null(paired_samples_ES_type))  paired_samples_ES_type <- 'SMCRH'
 
 
-# determine if donnes is a list (if it is raw data)
-dtype <- ifelse (inherits(donnes, "list") == TRUE, 'list', 'not list') 
+# determine if donnes is a list (= if it is raw data)
+dontype <- ifelse (inherits(donnes, "list"), 'raw data', 'matrix') 
 
-#if (dtype == 'not list') donnes_RN <- donnes
-if (dtype == 'list')     donnesRAW <- donnes
+
+# if donnes is a matrix, convert it to a dataframe
+if (dontype == 'matrix' & !is.data.frame(donnes))  donnes <- as.data.frame(donnes)
 
 
 zforCI <- qnorm((1 + CI * .01) / 2) # the z value that corresponds to the specified CI
@@ -28,166 +34,215 @@ zforCI <- qnorm((1 + CI * .01) / 2) # the z value that corresponds to the specif
 # is complete info (M, SD, & N) for 2 groups provided?
 if (!is.null(grp1_mn) & !is.null(grp1_sd) & !is.null(grp1_n) &
     !is.null(grp2_mn) & !is.null(grp2_sd) & !is.null(grp2_n)  ) 
-    {grpinfo = TRUE} else {grpinfo = FALSE}
+    {grpinfoALL = TRUE} else {grpinfoALL = FALSE}
 
-# notice if both totalN & grp Ns are missing & dtype is not a list
-if (dtype == 'not list' & grpinfo == FALSE & is.null(N)) {
-	message('\nBoth "N", and "grp1_n" & "grp2_n", are missing/NULL. The analyses cannot be')
-	message('conducted. Provide either "N", or both "grp1_n" & "grp2_n".\n')
+if (is.null(N) & !is.null(grp1_n) & !is.null(grp2_n)) {
+	donnes$N <- donnes[,grp1_n] + donnes[,grp2_n]
+	N <- 'N'
 }
 
-if (grpinfo == TRUE & is.null(ES_type_IN))  ES_type_IN = 'g'
-	
-if (grpinfo == FALSE & is.null(ES_type_IN)) ES_type_IN = 'r'
+
+# warning if both totalN & grp Ns are missing & dontype is not a list
+if (dontype == 'matrix' & is.null(N) & is.null(grp1_n) & is.null(grp2_n)) {
+	message('\nThe entered data is a matrix (and not raw data points), and')		
+	message('both "N", and "grp1_n" & "grp2_n", are missing/NULL. Bayesian analyses cannot')
+	message('be conducted without sample size information.\n')
+}
+
 
 
 
 ######################  compute ESdat for meta-analyses  &  donnesRN for Bayesian  #####################
 
-# ESdat has the yi & vi values for meta-analyses; yi (ES) is in correlation coef metric
+
+ESdat <- NULL   # ESdat will have the yi & vi values for the meta-analyses
 
 # donnesRN has the effect size (r) & N for the Bayesian analyses
 
 donnes_RN <- NULL # won't do Bayesian if this remains null
 
-#totalNs <- NULL
 
 
-if (ES_type_IN == 'r') {	
-	if (dtype == 'not list') {
+	
+if (dontype == 'matrix' & ES_type_IN == 'r') {
 
-		# ESdat if ES & N are provided
-		# Vr may be available, but it is easier for ESdat to be an escalc object (e.g., for summESdat)
-		if (!is.null(ES) & !is.null(N) ) {
-			donnes_RN <- data.frame(N = donnes[,N], ES = donnes[,ES])
-			ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
-			# totalNs <- attr(ESdat$yi, 'ni')
-		}
+	# ESdat & donnes_RN if ES & N are provided
+	if (!is.null(ES) & !is.null(N) ) {
+
+		donnes_RN <- data.frame(N = donnes[,N], ES = donnes[,ES])
+
+		ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
+		# totalNs <- attr(ESdat$yi, 'ni')
 	}
 
-	if (dtype == 'list') {
-		donnes_RN <- data.frame(N = rep(NA,length(donnes)), ES = rep(NA,length(donnes)))
-		for (lupe in 1:length(donnes)) {
-			donnes_RN$N[lupe]  <- nrow(donnes[[lupe]])
-			donnes_RN$ES[lupe] <- cor(na.omit(donnes[[lupe]]))[2,1]
-		}
-		ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )	
-#		totalNs <- attr(ESdat$yi, 'ni')
-	}
-}
-	
-
-if (ES_type_IN == 'd' | ES_type_IN == 'g') { 
-	
-	if (dtype == 'not list') { # need ES & vi, & also need N1 & N2, or totalN, for Bayesian
-
-		# if ES & vi & totalN are provided, but group info is NOT provided
-		if (!is.null(ES) & !is.null(vi) & !is.null(N) & grpinfo == FALSE) { 
-
-			rfromgd <- CONVERT_ES(ES= donnes[,ES], ES_var = donnes[,vi], 
-			                     ES_type_IN=ES_type_IN, ES_type_OUT='r', totalN = donnes[,N], verbose = FALSE)
-			
-			donnes_RN <- data.frame(N = donnes[,N], ES = rfromgd$r) 
-
-			ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )	
-		}		
-			
-		# if vi is not provided, but grp1 & grp2 info is available
-		if (is.null(vi) & grpinfo) {  
-
-			ESdat_grpinfo <- ES_from_GRPINFO(
-			                    grp1_MN=donnes[,grp1_mn], grp1_SD=donnes[,grp1_sd], grp1_N=donnes[,grp1_n], 
-				                grp2_MN=donnes[,grp2_mn], grp2_SD=donnes[,grp2_sd], grp2_N=donnes[,grp2_n],
-				                ES_type_OUT = 'r')
-
-			# from the escalc documentation: The positive bias in the standardized mean difference is 
-			# automatically corrected for within the function, yielding Hedges' g for measure="SMD" (Hedges, 1981)	
-			# I am therefore using ES_from_GRPINFO, because donnes can sometimes be d and not g values	
-
-			# ESdat_g <- escalc(measure='SMD', vtype='UB', 
-			                  # m1i=donnes[,grp1_mn], sd1i=donnes[,grp1_sd], n1i=donnes[,grp1_n], 
-				              # m2i=donnes[,grp2_mn], sd2i=donnes[,grp2_sd], n2i=donnes[,grp2_n])
-
-			# totalNs <- attr(ESdat_grpinfo$yi, 'ni')
-
-			# rfromgd <- CONVERT_ES(ES = ESdat_grpinfo$yi, Vd = ESdat_grpinfo$vi, dg_type = ES_type_OUT, 
-			                     # grp1_N = donnes[,grp1_n], grp2_N = donnes[,grp2_n], verbose = FALSE)
-			                     			
-			# donnes_RN <- data.frame(N = rfromgd$totalN, ES = rfromgd$r) 
-
-			donnes_RN <- data.frame(N = ESdat_grpinfo$totalN, ES = ESdat_grpinfo$r) 
-
-			ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
-		}
-
-		# when vi & group info are NOT provided, but ES & totalN are available
-		if (!is.null(ES) & is.null(vi) & grpinfo == FALSE & !is.null(N)) {
-
-			# there is no way of obtaining vi for d or g, so converting both ES & ES_type_IN to r
-
-			# message('\n\n\nA d or g effect size was specified, but without vi or sufficient information')
-			# message('about the two groups. vi cannot be computed, and meta-analyses cannot be conducted.')
-			# message('The total N and ES were provided, and so the ES and all subsequent analyses')
-			# message('will be for correlation coefficient equivalents, which can be computed for the provided data.\n\n')
-
-			rfromgd <- CONVERT_ES(ES = donnes[,ES], ES_var = NULL, 
-			                     ES_type_IN=ES_type_IN, ES_type_OUT='r', totalN = donnes[,N], verbose = FALSE)
-			
-			donnes_RN <- data.frame(N = donnes[,N], ES = rfromgd$r) 
-
-			ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
-
-			ES_type_IN = 'r'
-		}
-	}		
-
-	if (dtype == 'list') {
-		# ESdat_grpinfo  <- data.frame(yi = rep(NA,length(donnes)), vi = rep(NA,length(donnes)))
-		donnes_RN <- data.frame(N =  rep(NA,length(donnes)), ES = rep(NA,length(donnes)))
-		for (lupe in 1:length(donnes)) {
-			
-			means <- aggregate(as.matrix(donnes[[lupe]][,2]), list(donnes[[lupe]][,1]), mean)			
-			SDs   <- aggregate(as.matrix(donnes[[lupe]][,2]), list(donnes[[lupe]][,1]), sd)
-			Ns    <- table(donnes[[lupe]][,1])
+	# ESdat & donnes_RN if ES & vi are provided, but not N
+	if (!is.null(ES) & !is.null(vi)  & is.null(N)) {
+		
+		donnes[,N] <- (1 - donnes[,ES]^2) / donnes[,vi]  + 2
 				
-			# using just the 1st 2 values of the groups variable (col 1 of donnes)
-			ESdat_grpinfo[lupe,] <- ES_from_GRPINFO(
-			                           grp1_MN=means[1,2], grp1_SD=SDs[1,2], grp1_N=Ns[1], 
-				                       grp2_MN=means[2,2], grp2_SD=SDs[2,2], grp2_N=Ns[2],
-				                       ES_type_OUT='r')
+		donnes_RN <- data.frame(N = donnes[,N], ES = donnes[,ES])
 
-			# from the escalc Rd:
-			# The positive bias in the standardized mean difference is automatically 
-			# corrected for within the function, yielding Hedges' g for measure="SMD" 
-			# (Hedges, 1981). Similarly, the same bias correction is applied for 
-			# measure="SMDH" (Bonett, 2009). For measure="SMD", one can choose between 
-			# vtype="LS" (the default) and vtype="UB". The former uses the usual large-sample 
-			# approximation to compute the sampling variances. The latter provides unbiased 
-			# estimates of the sampling variances.			
-								
-			# using just the 1st 2 values of the groups variable (col 1 of donnes)
-			# ESdat_g[lupe,] <- escalc(measure='SMD', vtype='UB', 
-			                         # m1i=means[1,2], sd1i=SDs[1,2], n1i=Ns[1], 
-			                         # m2i=means[2,2], sd2i=SDs[2,2], n2i=Ns[2])
-
-			# rfromgd = CONVERT_ES(ES = ESdat_grpinfo$yi[lupe], Vd = ESdat_grpinfo$vi[lupe], dg_type = ES_type_OUT, 
-			                    # grp1_N = Ns[1], grp2_N = Ns[2], verbose = FALSE)						
-			
-			# donnes_RN[lupe,] <- data.frame(N = sum(Ns), ES = rfromgd$r) 
-
-			donnes_RN[lupe,] <- data.frame(N = ESdat_grpinfo$totalN, ES = ESdat_grpinfo$r) 
-		}
 		ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
 	}
 }
 
 
-#totalNs <- attr(ESdat$yi, 'ni')
 
-totalNs <- donnes_RN$N
+if (dontype == 'matrix' & (grpinfoALL | (ES_type_IN == 'd' | ES_type_IN == 'g'))) { 
+	
+	# need ES & vi, & also need N1 & N2, or totalN, for Bayesian
 
-# identifying & removing any row with an NA from ESdat, totalNs, & donnes_RN
-rowswithNAs <- unique(which(is.na(cbind(ESdat, totalNs, donnes_RN)), arr.ind=TRUE)[,1])
+	# if ES & vi & totalN are provided, but group info is NOT provided
+	if (!is.null(ES) & !is.null(vi) & !is.null(N) & grpinfoALL == FALSE) { 
+
+		rfromgd <- CONVERT_ES(ES= donnes[,ES], ES_var = donnes[,vi], 
+		                     ES_type_IN=ES_type_IN, ES_type_OUT='r', totalN = donnes[,N], verbose = FALSE)
+		
+		donnes_RN <- data.frame(N = donnes[,N], ES = rfromgd$r) 
+
+		ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )	
+	}		
+		
+	# if vi is not provided, but grp1 & grp2 info is available
+	if (is.null(vi) & grpinfoALL) {  
+
+		ESdat_grpinfo <- ES_from_GRPINFO(
+		                    grp1_MN=donnes[,grp1_mn], grp1_SD=donnes[,grp1_sd], grp1_N=donnes[,grp1_n], 
+			                grp2_MN=donnes[,grp2_mn], grp2_SD=donnes[,grp2_sd], grp2_N=donnes[,grp2_n],
+			                ES_type_OUT = 'r')
+
+		# from the escalc documentation: The positive bias in the standardized mean difference is 
+		# automatically corrected for within the function, yielding Hedges' g for measure="SMD" (Hedges, 1981)	
+		# I am therefore using ES_from_GRPINFO, because donnes can sometimes be d and not g values	
+
+		# ESdat_g <- escalc(measure='SMD', vtype='UB', 
+		                  # m1i=donnes[,grp1_mn], sd1i=donnes[,grp1_sd], n1i=donnes[,grp1_n], 
+			              # m2i=donnes[,grp2_mn], sd2i=donnes[,grp2_sd], n2i=donnes[,grp2_n])
+
+		# totalNs <- attr(ESdat_grpinfo$yi, 'ni')
+
+		# rfromgd <- CONVERT_ES(ES = ESdat_grpinfo$yi, Vd = ESdat_grpinfo$vi, dg_type = ES_type_OUT, 
+		                     # grp1_N = donnes[,grp1_n], grp2_N = donnes[,grp2_n], verbose = FALSE)
+		                     			
+		# donnes_RN <- data.frame(N = rfromgd$totalN, ES = rfromgd$r) 
+
+		donnes_RN <- data.frame(N = ESdat_grpinfo$totalN, ES = ESdat_grpinfo$r) 
+
+		ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
+	}
+
+	# when vi & group info are NOT provided, but ES & totalN are available
+	if (!is.null(ES) & is.null(vi) & grpinfoALL == FALSE & !is.null(N)) {
+
+		# there is no way of obtaining vi for d or g, so converting both ES & ES_type_IN to r
+
+		# message('\n\n\nA d or g effect size was specified, but without vi or sufficient information')
+		# message('about the two groups. vi cannot be computed, and meta-analyses cannot be conducted.')
+		# message('The total N and ES were provided, and so the ES and all subsequent analyses')
+		# message('will be for correlation coefficient equivalents, which can be computed for the provided data.\n\n')
+
+		rfromgd <- CONVERT_ES(ES = donnes[,ES], ES_var = NULL, 
+		                     ES_type_IN=ES_type_IN, ES_type_OUT='r', totalN = donnes[,N], verbose = FALSE)
+		
+		donnes_RN <- data.frame(N = donnes[,N], ES = rfromgd$r) 
+
+		ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
+
+		ES_type_IN = 'r'
+	}
+}		
+
+
+
+
+if (dontype == 'raw data' & rawdata_type == 'for_correl') {
+	donnes_RN <- data.frame(N = rep(NA,length(donnes)), ES = rep(NA,length(donnes)))
+	for (lupe in 1:length(donnes)) {
+		donnes_RN$N[lupe]  <- nrow(donnes[[lupe]])
+		donnes_RN$ES[lupe] <- cor(na.omit(donnes[[lupe]]))[2,1]
+	}
+	ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )	
+}
+
+
+
+
+if (dontype == 'raw data' & rawdata_type == 'indep_groups') {
+			
+	# ESdat_grpinfo  <- data.frame(yi = rep(NA,length(donnes)), vi = rep(NA,length(donnes)))
+	donnes_RN <- data.frame(N =  rep(NA,length(donnes)), ES = rep(NA,length(donnes)))
+	for (lupe in 1:length(donnes)) {
+		
+		means <- aggregate(as.matrix(donnes[[lupe]][,2]), list(donnes[[lupe]][,1]), mean)			
+		SDs   <- aggregate(as.matrix(donnes[[lupe]][,2]), list(donnes[[lupe]][,1]), sd)
+		Ns    <- table(donnes[[lupe]][,1])
+			
+		# using just the 1st 2 values of the groups variable (col 1 of donnes)
+		ESdat_grpinfo[lupe,] <- ES_from_GRPINFO(
+		                           grp1_MN=means[1,2], grp1_SD=SDs[1,2], grp1_N=Ns[1], 
+			                       grp2_MN=means[2,2], grp2_SD=SDs[2,2], grp2_N=Ns[2],
+			                       ES_type_OUT='r')
+
+		# from the escalc Rd:
+		# The positive bias in the standardized mean difference is automatically 
+		# corrected for within the function, yielding Hedges' g for measure="SMD" 
+		# (Hedges, 1981). Similarly, the same bias correction is applied for 
+		# measure="SMDH" (Bonett, 2009). For measure="SMD", one can choose between 
+		# vtype="LS" (the default) and vtype="UB". The former uses the usual large-sample 
+		# approximation to compute the sampling variances. The latter provides unbiased 
+		# estimates of the sampling variances.			
+							
+		# using just the 1st 2 values of the groups variable (col 1 of donnes)
+		# ESdat_g[lupe,] <- escalc(measure='SMD', vtype='UB', 
+		                         # m1i=means[1,2], sd1i=SDs[1,2], n1i=Ns[1], 
+		                         # m2i=means[2,2], sd2i=SDs[2,2], n2i=Ns[2])
+
+		# rfromgd = CONVERT_ES(ES = ESdat_grpinfo$yi[lupe], Vd = ESdat_grpinfo$vi[lupe], dg_type = ES_type_OUT, 
+		                    # grp1_N = Ns[1], grp2_N = Ns[2], verbose = FALSE)						
+		
+		# donnes_RN[lupe,] <- data.frame(N = sum(Ns), ES = rfromgd$r) 
+
+		donnes_RN[lupe,] <- data.frame(N = ESdat_grpinfo$totalN, ES = ESdat_grpinfo$r) 
+	}
+	ESdat <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
+}
+
+
+
+if (dontype == 'raw data' & rawdata_type == 'paired_samples') {
+		
+		studyStats <- c()
+		for (lupe in 1:length(donnes)) {
+
+			studyMNs <- colMeans(donnes[[lupe]])						
+			studySDs <- apply(donnes[[lupe]], 2, sd)			
+			studyN   <- nrow(donnes[[lupe]])
+			studyR   <- cor(donnes[[lupe]])[1,2]
+
+			studyStats <- rbind(studyStats, c(studyMNs, studySDs, studyN, studyR))
+		}
+		colnames(studyStats) <- c('studyMN1','studyMN2','studySD1','studySD2','studyN','studyR')
+		studyStats <- data.frame(studyStats)
+		
+		ESdat <- escalc(measure=paired_samples_ES_type,  
+				        m1i=studyStats$studyMN1,  sd1i=studyStats$studySD1,   
+					    m2i=studyStats$studyMN2,  sd2i=studyStats$studySD2, ni=studyStats$studyN, ri=studyStats$studyR )
+}
+
+
+
+# when only ES & vi are provided
+if (dontype == 'matrix' & is.null(N) & !grpinfoALL & !is.null(ES) & !is.null(vi))   ESdat <- escalc(yi=donnes[,ES], vi=donnes[,vi])
+
+	
+
+# the total Ns, if available
+if (!is.null(donnes_RN)) {totalNs <- donnes_RN$N} else {totalNs <- rep(NA,nrow(ESdat))}
+
+
+
+# identifying & removing any row with an NA from ESdat,   & the same rows from totalNs, & donnes_RN
+rowswithNAs <- unique(which(is.na(cbind(ESdat)), arr.ind=TRUE)[,1])   # , totalNs, donnes_RN
 if (length(rowswithNAs) >= 1) {
 	ESdat <- ESdat[-rowswithNAs,]
 	totalNs <- totalNs[-rowswithNAs]
@@ -199,7 +254,47 @@ if (length(rowswithNAs) >= 1) {
 Nstudies <- nrow(ESdat)
                       
                
-                
+
+ 
+######################  data & argument specifications  #####################
+ 
+if (verbose) {
+
+	if (dontype == 'raw data') {
+		
+		message('\n\nThe input data are raw data (and not study effect sizes)')
+		
+		if (rawdata_type == 'for_correl') message('\nThe raw data were specified to be for computations of correlations between two variables.')
+	
+		if (rawdata_type == 'indep_groups') message('\nThe raw data were specified to be based on independent groups (in the first column of donnes).')
+	
+		if (rawdata_type == 'paired_samples') message('\nThe raw data were specified to be based on paired samples.')
+	}
+
+	if (dontype == 'matrix') {
+
+		message('\n\nThe input data are a matrix of study effect sizes (not raw data)')
+		
+		message('\nThe specified type of input effect sizes is: ', ES_type_IN)
+		
+		if (grpinfoALL == TRUE) message('\nComplete group info (i.e., M, SD, & N) for 2 groups was provided for the analyses')
+	}
+
+	message('\nNumber of studies: ', Nstudies)
+
+	message('\nThe requested type of output effect size is: ', ES_type_OUT)
+
+	message('\nThe specified method option for the meta-analyses: ',  rma_method)
+
+	message('\nThe requested kind(s) of Bayesian analyses: ', paste(Bayes_type, collapse=", "))
+	
+	message('\nThe type of prior data used in the updating analyses (both cumulative and Bayesian): ',  prior_type) 
+
+	message('\nThe confidence interval for the analyses: ', CI, '%')
+}
+
+
+               
 ##############################  NHST  #######################################
 
 
@@ -230,7 +325,8 @@ colnames(results_NHST) <- c('Study','ES.lb','ES','ES.ub')
 
 
 if (verbose) {
-	message('\n\nStudy effect sizes and conventional confidence intervals in r metric:\n')
+	if (!is.null(donnes_RN))  message('\n\nStudy effect sizes and conventional confidence intervals in r metric:\n')
+	if (is.null(donnes_RN))  message('\n\nStudy effect sizes and conventional confidence intervals:\n')
 	print(round(results_NHST,3), print.gap=4)
 }
 
@@ -240,58 +336,82 @@ if (verbose) {
 
 outp_MA_1 <- rma(yi=ESdat$yi, vi=ESdat$vi, method=rma_method)  # random-effects model
 
-# confidence intervals for tau & Isq
-heteroests <- confint(outp_MA_1)
+if (rma_method != 'FE') {
+	# confidence intervals for tau & Isq
+	heteroests <- confint(outp_MA_1)
+	
+	tau2    <- heteroests[[1]][1,1]
+	tau2LB  <- heteroests[[1]][1,2]
+	tau2UB  <- heteroests[[1]][1,3]
+	
+	tau     <- heteroests[[1]][2,1]
+	tauLB   <- heteroests[[1]][2,2]
+	tauUB   <- heteroests[[1]][2,3]
+	
+	isq     <- heteroests[[1]][3,1] * .01   # because rma outputs as percentages
+	isqLB   <- heteroests[[1]][3,2] * .01   # because rma outputs as percentages
+	isqUB   <- heteroests[[1]][3,3] * .01   # because rma outputs as percentages
+	
+	hsq     <- heteroests[[1]][4,1]
+	hsqLB   <- heteroests[[1]][4,2]
+	hsqUB   <- heteroests[[1]][4,3]
+}
 
-tau2    <- heteroests[[1]][1,1]
-tau2LB  <- heteroests[[1]][1,2]
-tau2UB  <- heteroests[[1]][1,3]
-
-tau     <- heteroests[[1]][2,1]
-tauLB   <- heteroests[[1]][2,2]
-tauUB   <- heteroests[[1]][2,3]
-
-isq     <- heteroests[[1]][3,1] * .01   # because rma outputs as percentages
-isqLB   <- heteroests[[1]][3,2] * .01   # because rma outputs as percentages
-isqUB   <- heteroests[[1]][3,3] * .01   # because rma outputs as percentages
-
-hsq     <- heteroests[[1]][4,1]
-hsqLB   <- heteroests[[1]][4,2]
-hsqUB   <- heteroests[[1]][4,3]
+if (rma_method == 'FE') {   # for the output object
+	tau2 = NULL; tau2LB = NULL; tau2UB = NULL;
+	tau = NULL; tauLB = NULL; tauUB = NULL;
+	isq = NULL; isqLB = NULL; isqUB = NULL;
+	hsq = NULL; hsqLB = NULL; hsqUB = NULL;
+}
 
 
 if (verbose) {
-	
-	message('\n\nResults from a regular, all-studies-at-once, random-effects meta-analysis')
-	message('in r, d, & g effect size metrics:\n')
-	
-	# message('\n   r = ',round(outp_MA_1$b,2),'   r.lb = ',round(outp_MA_1$ci.lb,2),
-	        # '    r.ub = ',round(outp_MA_1$ci.ub,2))
 
-	rres <- rbind(outp_MA_1$b, outp_MA_1$ci.lb, outp_MA_1$ci.ub)
-	esmat <- t(rres)
+	if (!is.null(donnes_RN)) {	
+		message('\n\nResults from a regular, all-studies-at-once, random-effects meta-analysis')
+		message('in r, d, & g effect size metrics:\n')
 		
-	dres <- CONVERT_ES(ES = rres, ES_var = rep(outp_MA_1$vb,3), ES_type_IN='r', ES_type_OUT='d', 
-                       verbose = FALSE)
-	esmat <- rbind(esmat, dres$d)	
+		# message('\n   r = ',round(outp_MA_1$b,2),'   r.lb = ',round(outp_MA_1$ci.lb,2),
+		        # '    r.ub = ',round(outp_MA_1$ci.ub,2))
 	
-	gres <- CONVERT_ES(ES = rres, ES_var = rep(outp_MA_1$vb,3), ES_type_IN='r', ES_type_OUT='g', 
-                       totalN = rep(outp_MA_1$k,3), verbose = FALSE)
-	esmat <- rbind(esmat, gres$g)	
+		rres <- rbind(outp_MA_1$b, outp_MA_1$ci.lb, outp_MA_1$ci.ub)
+		esmat <- t(rres)
+			
+		dres <- CONVERT_ES(ES = rres, ES_var = rep(outp_MA_1$vb,3), ES_type_IN='r', ES_type_OUT='d', 
+	                       verbose = FALSE)
+		esmat <- rbind(esmat, dres$d)	
 		
-	colnames(esmat) <- c('ES','ES.lb','ES.ub')
-	rownames(esmat) <- c('r','d','g')
-	print(round(esmat,3), print.gap=4)	
+		gres <- CONVERT_ES(ES = rres, ES_var = rep(outp_MA_1$vb,3), ES_type_IN='r', ES_type_OUT='g', 
+	                       totalN = rep(outp_MA_1$k,3), verbose = FALSE)
+		esmat <- rbind(esmat, gres$g)	
+		colnames(esmat) <- c('ES','ES.lb','ES.ub')
+		rownames(esmat) <- c('r','d','g')
+		print(round(esmat,3), print.gap=4)	
+	}
+	
+	if (is.null(donnes_RN)) {	
+		message('\n\nResults from a regular, all-studies-at-once, random-effects meta-analysis\n')
+		rres <- rbind(outp_MA_1$b, outp_MA_1$ci.lb, outp_MA_1$ci.ub)
+		esmat <- t(rres)		
+		colnames(esmat) <- c('ES','ES.lb','ES.ub')
+		rownames(esmat) <- c(' ')
+		print(round(esmat,3), print.gap=4)		}
 }
 
 
 
 ##################################  publication bias  ###########################################
 
-# cannot run tests for publication bias when the study Ns are all the same
-#if (var(donnes_RN[,1]) != 0) {
+
+
+#if (var(donnes_RN[,1]) != 0) {  # cannot run some tests for publication bias when the study Ns are all the same
+	
 	funreg <- regtest(outp_MA_1)  # Regression Test for Funnel Plot Asymmetry -- metafor
-	funrank <- suppressWarnings(ranktest(outp_MA_1))  #  Rank Correlation Test for Funnel Plot Asymmetry  -- metafor
+	
+	funrank <- suppressWarnings(ranktest(outp_MA_1))  # Rank Correlation Test for Funnel Plot Asymmetry  -- metafor
+
+	biasStats <- cbind(funreg$zval, funreg$pval, funrank$tau, funrank$pval)
+	colnames(biasStats) <- c('  reg test z','  reg test p','     rank test tau','  rank test p')
 
 	# # the metabias (& metacor) function is from the meta package, so not using
 	# m1 <- metacor(cor=as.matrix(donnes_RN[,2]), as.matrix(donnes_RN[,1]),  method.bias='linreg') # -- meta
@@ -300,10 +420,10 @@ if (verbose) {
 	# biasStats <- cbind(funreg$zval, funreg$pval, funrank$tau, funrank$pval, thomsharp$statistic, thomsharp$p.value)
 	# colnames(biasStats) <- 
 	  # c('  reg test z','  reg test p','     rank test tau','  rank test p','     Thom/Sharp t','   Thom/Sharp p')
-	# message('\n\nTests for Publication Bias:\n\n')
-	# print(round(biasStats,3))	
+
 
 	if (verbose) {
+
 		message('\n\nTests for Publication Bias:')
 		
 		message('\n   Regression Test for Funnel Plot Asymmetry:  z = ', round(funreg$zval,2), 
@@ -315,13 +435,37 @@ if (verbose) {
 		# message('\n   Thom/Sharp:  t = ', round(thomsharp$statistic,2), 
 		        # '   p = ', round(thomsharp$p.value))
 	}
+	
+	if (funnel_plot) {
 
-#	write.table(round(biasStats,3), "biasStats.csv", sep=',', append=TRUE, col.names=F, row.names=titre)
-#	bitmap(paste("Funnel Plot - ",titre,".png",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
-#	par( pty="m", mar=c(3,2,3,2) + 2.6)  #     1.8
-#	metafor::funnel(outp_MA_1, main=titre)
-#	dev.off()
-#}
+		if (is.null(funnel_plot_title))  funnel_plot_title = deparse(substitute(donnes))
+
+		if (is.null(funnel_plot_type))  funnel_plot_type = 'png'
+		
+		if (funnel_plot_type == 'bitmap')
+			bitmap(paste("Figure - ",funnel_plot_title,".bitmap",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
+	
+		if (funnel_plot_type == 'tiff')
+			tiff(paste("Figure - ",funnel_plot_title,".tiff",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
+			
+		if (funnel_plot_type == 'png')
+			png(paste("Figure - ",funnel_plot_title,".png",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
+			
+		if (funnel_plot_type == 'jpeg')
+			jpeg(paste("Figure - ",funnel_plot_title,".jpeg",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
+			
+		if (funnel_plot_type == 'bmp')
+			bmp(paste("Figure - ",funnel_plot_title,".bmp",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
+			        
+		# png(paste("Funnel Plot - ",funnel_plot_title,".png",sep=""), width=9, height=7, units="in", res = 600, pointsize=12)
+		par( pty="m", mar=c(3,2,3,2) + 2.6)  #     1.8
+
+		oldpar <- par(no.readonly = TRUE)
+		on.exit(par(oldpar))
+
+		metafor::funnel(outp_MA_1, main=funnel_plot_title)
+		dev.off()
+	}
 
 	# the commands below can be used to obtain bias-adjusted estimates of meta-analysis effect sizes
 
@@ -356,77 +500,71 @@ if (verbose) {
 ############################  cumulative meta-analysis  ###############################
 
 
-outp_CUM <- cumul(outp_MA_1)  # cumulative meta-analysis (in the order of publication year)
+outp_CUM_META <- cumul(outp_MA_1)  # cumulative meta-analysis (in the order of publication year)
 
-# message('\n\n Cum MA in r metric:'); 
-# print(outp_CUM)
-
-
-CUM_ES    <- outp_CUM$estimate
-CUM_tau2  <- outp_CUM$tau2
-CUM_tau   <- sqrt(outp_CUM$tau2)
-CUM_se    <- outp_CUM$se
-
-# CUM_ES_lb <- outp_CUM$ci.lb
-# CUM_ES_ub <- outp_CUM$ci.ub
-
-# # computing CIs assuming they are not symetrical -- Loftus
-CUM_z <- as.matrix(.5 * log((1 + CUM_ES) / (1 - CUM_ES)))
-#CUM_tau <- sqrt(CUM_tau2)
-zUB <- CUM_z + zforCI * CUM_se
-zLB <- CUM_z - zforCI * CUM_se
-CUM_ES_ub <- tanh(zUB)
-CUM_ES_lb <- tanh(zLB)
+# message('\n\n Cum MA in r metric:'); print(outp_CUM_META)
 
 
-results_CUM <- cbind(1:Nstudies, totalNs, ESdat$yi, CUM_ES_lb, CUM_ES, CUM_ES_ub)
+CUM_META_ES    <- outp_CUM_META$estimate
+# CUM_META_tau2  <- outp_CUM_META$tau2
+# CUM_META_tau   <- sqrt(outp_CUM_META$tau2)
+# CUM_META_se    <- outp_CUM_META$se
 
-	# # setting values > 1 to NA
-	# results_CUM[,4:6] <- ifelse( results_CUM[,4:6] >  1,  NA, results_CUM[,4:6])
-	# results_CUM[,4:6] <- ifelse( results_CUM[,4:6] < -1,  NA, results_CUM[,4:6])
+CUM_META_ES_lb <- outp_CUM_META$ci.lb
+CUM_META_ES_ub <- outp_CUM_META$ci.ub
 
-if (ES_type_OUT == 'd' | ES_type_OUT == 'g') {
-	results_CUM_dg <- results_CUM
-	for (lupe in 3:6) {
-		cumdres <- CONVERT_ES(ES = results_CUM[,lupe], ES_var = NULL, 
-		                      ES_type_IN='r', ES_type_OUT=ES_type_OUT, totalN = totalNs, verbose = FALSE)
-		                      
-		if (ES_type_OUT == 'd') results_CUM_dg[,lupe] <- cumdres$d
-		if (ES_type_OUT == 'g') results_CUM_dg[,lupe] <- cumdres$g
-		                      
-#		results_CUM_dg[,lupe] <- t(cumdres[[,1]])	
+# # # computing CIs assuming they are not symetrical -- Loftus
+# CUM_META_z <- as.matrix(.5 * log((1 + CUM_META_ES) / (1 - CUM_META_ES)))
+# #CUM_META_tau <- sqrt(CUM_META_tau2)
+# zUB <- CUM_META_z + zforCI * CUM_META_se
+# zLB <- CUM_META_z - zforCI * CUM_META_se
+# CUM_META_ES_ub <- tanh(zUB)
+# CUM_META_ES_lb <- tanh(zLB)
+
+
+
+if (!is.null(donnes_RN)) {
+	
+	results_CUM_META <- cbind(1:Nstudies, totalNs, ESdat$yi, CUM_META_ES_lb, CUM_META_ES, CUM_META_ES_ub)
+
+	if (ES_type_OUT == 'd' | ES_type_OUT == 'g') {
+	
+		results_CUM_META_dg <- results_CUM_META
+		for (lupe in 3:6) {
+			cumdres <- CONVERT_ES(ES = results_CUM_META[,lupe], ES_var = NULL, 
+			                      ES_type_IN='r', ES_type_OUT=ES_type_OUT, totalN = totalNs, verbose = FALSE)
+			                      
+			if (ES_type_OUT == 'd') results_CUM_META_dg[,lupe] <- cumdres$d
+			if (ES_type_OUT == 'g') results_CUM_META_dg[,lupe] <- cumdres$g
+		}		
+		results_CUM_META <- results_CUM_META_dg  # replacing results_CUM_META with results_CUM_META_dg
 	}	
-	# replacing results_CUM with results_CUM_dg
-	results_CUM <- results_CUM_dg
-}	
-
-if (verbose) {
-	message('\n\n\nThe specified type of effect size for the output below = ', ES_type_OUT)
+	
+	dimnames(results_CUM_META) <-list(rep("", dim(results_CUM_META)[1]))
+	colnames(results_CUM_META) <- c('Study','Study N','Study ES','ES.lb','ES','ES.ub')
+	
+	if (verbose)  message('\n\n\nThe specified type of effect size for the output below = ', ES_type_OUT)
 }
 
-dimnames(results_CUM) <-list(rep("", dim(results_CUM)[1]))
-colnames(results_CUM) <- 
-         c('Study','Study N','Study ES','ES.lb','ES','ES.ub')
+
+if (is.null(donnes_RN)) {
+
+	results_CUM_META <- cbind(1:Nstudies, ESdat$yi, CUM_META_ES_lb, CUM_META_ES, CUM_META_ES_ub)
+
+	dimnames(results_CUM_META) <-list(rep("", dim(results_CUM_META)[1]))
+	colnames(results_CUM_META) <- c('Study','Study ES','ES.lb','ES','ES.ub')
+}
+
+	# # setting values > 1 to NA
+	# results_CUM_META[,4:6] <- ifelse( results_CUM_META[,4:6] >  1,  NA, results_CUM_META[,4:6])
+	# results_CUM_META[,4:6] <- ifelse( results_CUM_META[,4:6] < -1,  NA, results_CUM_META[,4:6])
+
 
 if (verbose) {
 	message('\n\n\nRandom-effects cumulative meta-analysis estimates:\n')
-	print(round(results_CUM,3), print.gap=4)
+	print(round(results_CUM_META,3), print.gap=4)
 }
 
-
-
-##############################  ESdat, based on r & N, for the Bayesian analyses  ##########################
-
-
-# # summESdat <- summary(ESdat)   
-
-
-# if (is.null(donnes_RN) == FALSE) {
-
-	# ESdat_for_BA <- escalc(measure='COR', ni=donnes_RN$N, ri=donnes_RN$ES )
-
-	# summESdat_for_BA <- summary(ESdat_for_BA)   
-# }
 
 
 
@@ -439,10 +577,10 @@ if (is.element('Schmidt_Raju', Bayes_type) & !is.null(donnes_RN)) {
 
 
 # loop through the studies, treating each subsequent study as the Likelihood
-results_BA_SR <- matrix(NA,nrow(ESdat),5)
+results_BAYES_SR <- matrix(NA,nrow(ESdat),5)
 
 # the 1st row of results = regular CIs
-results_BA_SR[1,3:5] <- cbind(summESdat$ci.lb[1], summESdat$yi[1], summESdat$ci.ub[1])
+results_BAYES_SR[1,3:5] <- cbind(summESdat$ci.lb[1], summESdat$yi[1], summESdat$ci.ub[1])
 
 
 for (luper in 2:nrow(ESdat)) {
@@ -452,24 +590,24 @@ for (luper in 2:nrow(ESdat)) {
 	outp_MA_3 <- rma(yi=priordatSR$yi, vi=priordatSR$vi, method=rma_method, 
 	                 control=list(stepadj=0.5, maxiter=1000))  # random-effects model
 	
-	BA_SR_priorES <- outp_MA_3$b
-	BA_SR_priorSE <- outp_MA_3$se
-	BA_SR_priorPopV <- outp_MA_3$tau2
-	BA_SR_Vprior <- BA_SR_priorSE**2
+	BAYES_SR_priorES <- outp_MA_3$b
+	BAYES_SR_priorSE <- outp_MA_3$se
+	BAYES_SR_priorPopV <- outp_MA_3$tau2
+	BAYES_SR_Vprior <- BAYES_SR_priorSE**2
 	k <- nrow(priordatSR)
 	
 	rk <- donnes_RN[luper,'ES']
 	Nk <- donnes_RN[luper,'N']
 	
-	Vrk <- ( (1 - rk**2)**2 / (Nk - 1) )  + BA_SR_priorPopV
+	Vrk <- ( (1 - rk**2)**2 / (Nk - 1) )  + BAYES_SR_priorPopV
 	
-	BA_SR_r <- ( (BA_SR_priorES / BA_SR_Vprior) + (rk / Vrk) ) / 
-	          ( (1 / BA_SR_Vprior) + (1 / Vrk))  # Schmidt & Raju, 2007, p 302, formula 6
+	BAYES_SR_r <- ( (BAYES_SR_priorES / BAYES_SR_Vprior) + (rk / Vrk) ) / 
+	          ( (1 / BAYES_SR_Vprior) + (1 / Vrk))  # Schmidt & Raju, 2007, p 302, formula 6
 	
-	BA_SR_postV <- (BA_SR_Vprior * Vrk) / (BA_SR_Vprior + Vrk)  # Schmidt & Raju, 2007, p 302, formula 7
+	BAYES_SR_postV <- (BAYES_SR_Vprior * Vrk) / (BAYES_SR_Vprior + Vrk)  # Schmidt & Raju, 2007, p 302, formula 7
 	
-	BA_SR_postPopV <- ( (k - 1) * BA_SR_priorPopV + (k**2 * BA_SR_postV - (k - 1)**2 * 
-	                   BA_SR_Vprior) - Vrk) / k # Schmidt & Raju, 2007, p 303, formula 8 -- same as cc$tau2
+	BAYES_SR_postPopV <- ( (k - 1) * BAYES_SR_priorPopV + (k**2 * BAYES_SR_postV - (k - 1)**2 * 
+	                   BAYES_SR_Vprior) - Vrk) / k # Schmidt & Raju, 2007, p 303, formula 8 -- same as cc$tau2
 	
 	# credibility intervals -- see Field 2005 p 448, formula 16
 	# Hunter and Schmidt recommend correcting this estimate for artifacts 
@@ -479,50 +617,50 @@ for (luper in 2:nrow(ESdat)) {
 	# from it the square root of the estimated population variance in 
 	# Equation 15 multiplied by ... (1.96 for a 95% interval) 
 	
-	BA_SR_rub <- BA_SR_r + 1.96 * sqrt(BA_SR_postV)  # sqrt(BA_SR_postV) = cc$se
-	BA_SR_rlb <- BA_SR_r - 1.96 * sqrt(BA_SR_postV)
+	BAYES_SR_rub <- BAYES_SR_r + 1.96 * sqrt(BAYES_SR_postV)  # sqrt(BAYES_SR_postV) = cc$se
+	BAYES_SR_rlb <- BAYES_SR_r - 1.96 * sqrt(BAYES_SR_postV)
 	
 	# confidence intervals -- see Field 2005 p 448, formula 17
 	# If confidence intervals are required (rather than credibility intervals) these can
 	# be obtained by using the standard error of the mean correlation. To obtain this
 	# standard error simply divide the variance of sample correlations (given in Equation 13)
 	# by the number of studies in the meta-analysis, k, and take the square root: 
-	# BA_SR_rub <- BA_SR_r + 1.96 * sqrt(BA_SR_postV / k)
-	# BA_SR_rlb <- BA_SR_r - 1.96 * sqrt(BA_SR_postV / k)
+	# BAYES_SR_rub <- BAYES_SR_r + 1.96 * sqrt(BAYES_SR_postV / k)
+	# BAYES_SR_rlb <- BAYES_SR_r - 1.96 * sqrt(BAYES_SR_postV / k)
 	
-	results_BA_SR[luper,] <- cbind(BA_SR_priorES, BA_SR_priorSE, # BA_SR_postV, BA_SR_postPopV, 
-	                               BA_SR_rlb, BA_SR_r, BA_SR_rub)
+	results_BAYES_SR[luper,] <- cbind(BAYES_SR_priorES, BAYES_SR_priorSE, # BAYES_SR_postV, BAYES_SR_postPopV, 
+	                               BAYES_SR_rlb, BAYES_SR_r, BAYES_SR_rub)
 
-	postN_Vs <- cbind(donnes_RN[luper,1], BA_SR_postV, BA_SR_postPopV)
-	}
+	postN_Vs <- cbind(donnes_RN[luper,1], BAYES_SR_postV, BAYES_SR_postPopV)
+}
 
-results_BA_SR <- data.frame(cbind( 1:Nstudies, as.matrix(donnes_RN), results_BA_SR ))
-#dimnames(results_BA_SR) <- list(rep("", dim(results_BA_SR)[1]))
-colnames(results_BA_SR) <- 
+results_BAYES_SR <- data.frame(cbind( 1:Nstudies, as.matrix(donnes_RN), results_BAYES_SR ))
+# dimnames(results_BAYES_SR) <- list(rep("", dim(results_BAYES_SR)[1]))
+colnames(results_BAYES_SR) <- 
     c('Study','Study N','Study ES','prior ES','prior SE','ES.lb','ES','ES.ub')  
+
+
+	# dimnames(results_CUM_META) <-list(rep("", dim(results_CUM_META)[1]))
+	# colnames(results_CUM_META) <- c('Study','Study N','Study ES','ES.lb','ES','ES.ub')
 
 
 # convert r to d or g effect sizes, if requested
 if (ES_type_OUT == 'd' | ES_type_OUT == 'g') {
-	results_BA_SR_dg <- results_BA_SR[,c('Study','Study N','Study ES','prior ES','ES.lb','ES','ES.ub')]
+	results_BAYES_SR_dg <- results_BAYES_SR[,c('Study','Study N','Study ES','prior ES','ES.lb','ES','ES.ub')]
 	for (lupe in 3:7) {
-		results_BA_SR_dg[,lupe] <-
-			CONVERT_ES(ES = results_BA_SR_dg[,lupe], ES_var = NULL, 
+		results_BAYES_SR_dg[,lupe] <-
+			CONVERT_ES(ES = results_BAYES_SR_dg[,lupe], ES_var = NULL, 
 		              ES_type_IN='r', ES_type_OUT=ES_type_OUT, 
-		              totalN=results_BA_SR_dg[,'Study N'], verbose = FALSE)[paste(ES_type_OUT)]
+		              totalN=results_BAYES_SR_dg[,'Study N'], verbose = FALSE)[paste(ES_type_OUT)]
 	}
-	results_BA_SR <- results_BA_SR_dg
+	results_BAYES_SR <- results_BAYES_SR_dg
 }
 
 
 if (verbose) {
 	message('\n\n\nBayesian estimates based on the Schmidt & Raju (2007) method:\n')
 
-	print(round(results_BA_SR,3), print.gap=4)
-
-	# if (ES_type_OUT == 'r') print(round(results_BA_SR,3), print.gap=4)
-	
-	# if (ES_type_OUT == 'd' | ES_type_OUT == 'g') print(round(results_BA_SR_dg,3), print.gap=4)
+	print(round(results_BAYES_SR,3), print.gap=4)
 }
 
 }
@@ -539,9 +677,8 @@ if (is.element('generated', Bayes_type) & !is.null(donnes_RN)) {
 # run MCMCglmm, using the effect size & sampling error variance from a MA of previous data
 
 # loop through the studies, treating each subsequent study as the Likelihood
-results_BA_GEN <- matrix(NA,Nstudies,5)
-BA_GEN_post_ests <- matrix(NA,Nstudies,2)
-#if (dtype == 'not list') donnesRAW <- list()
+results_BAYES_GEN <- matrix(NA,Nstudies,5)
+BAYES_GEN_post_ests <- matrix(NA,Nstudies,2)
 
 for (luper in 1:Nstudies) {
 	
@@ -554,79 +691,79 @@ for (luper in 1:Nstudies) {
 	colnames(dataset1) <- c('varIV','varDV')
 	
 	# # saving the generated data for the Bayes Factor analyses (when there is no raw data)
-	# if (dtype == 'not list') donnesRAW[[luper]] <- dataset1
+	# if (dontype == 'matrix') donnes[[luper]] <- dataset1
 	
 	if (luper == 1) { 
 		model1 <- MCMCglmm(varDV ~ varIV, data=dataset1, nitt=nitt, burnin=burnin, thin=thin, verbose=FALSE)
 		model1sum <- summary.MCMCglmm(model1)
-		BA_GEN_r   <- model1sum$solutions[2,1]
-		BA_GEN_rlb <- model1sum$solutions[2,2]
-		BA_GEN_rub <- model1sum$solutions[2,3]
-		BA_GEN_priorES <- NA
-		BA_GEN_priorSE <- NA
-		BA_GEN_post_ests[1,] <- c(BA_GEN_r, (diag(var(model1$Sol)))[2])  # saving the ES & the posterior variance
+		BAYES_GEN_r   <- model1sum$solutions[2,1]
+		BAYES_GEN_rlb <- model1sum$solutions[2,2]
+		BAYES_GEN_rub <- model1sum$solutions[2,3]
+		BAYES_GEN_priorES <- NA
+		BAYES_GEN_priorSE <- NA
+		BAYES_GEN_post_ests[1,] <- c(BAYES_GEN_r, (diag(var(model1$Sol)))[2])  # saving the ES & the posterior variance
 	}	
 		  
 	if (luper > 1) { 
-		if (prior_type == 'MA') { 		
+		if (prior_type == 'META') { 		
 			priordat <- ESdat[1:(luper-1),]
 			outp_MA_2 <- rma(yi=priordat$yi, vi=priordat$vi, method=rma_method, 
 	                         control=list(stepadj=0.5, maxiter=1000))  # random-effects model
 
-			BA_GEN_priorES <- outp_MA_2$b
-			BA_GEN_priorSE <- outp_MA_2$se
-#			BA_GEN_priorPopV <- outp_MA_2$tau2
-			BA_GEN_Vprior <- BA_GEN_priorSE**2			
+			BAYES_GEN_priorES <- outp_MA_2$b
+			BAYES_GEN_priorSE <- outp_MA_2$se
+#			BAYES_GEN_priorPopV <- outp_MA_2$tau2
+			BAYES_GEN_Vprior <- BAYES_GEN_priorSE**2			
 		}
-		if (prior_type == 'Bayes') {	
+		if (prior_type == 'BAYES') {	
 			# Jarrod Hadfield  https://stat.ethz.ch/pipermail/r-sig-mixed-models/2012q4/019436.html
 			# v <- var(model$Sol)  the variance-covariance matrix
 			# sqrt(diag(v))  the posterior standard deviations (akin to the standard errors) 
-			BA_GEN_priorES <- BA_GEN_post_ests[(luper-1),1]
-			BA_GEN_Vprior  <- BA_GEN_post_ests[(luper-1),2]
-			BA_GEN_priorSE <- sqrt(BA_GEN_Vprior)
+			BAYES_GEN_priorES <- BAYES_GEN_post_ests[(luper-1),1]
+			BAYES_GEN_Vprior  <- BAYES_GEN_post_ests[(luper-1),2]
+			BAYES_GEN_priorSE <- sqrt(BAYES_GEN_Vprior)
 		}
-		priors <- list(B=list(mu=c(0, BA_GEN_priorES), V=diag(c(1, BA_GEN_Vprior))))		
+		priors <- list(B=list(mu=c(0, BAYES_GEN_priorES), V=diag(c(1, BAYES_GEN_Vprior))))		
 		model2 <- MCMCglmm(varDV ~ varIV, data=dataset1, prior=priors, nitt=nitt, burnin=burnin, 
 		                   thin=thin, verbose=FALSE)
 		model2sum  <- summary.MCMCglmm(model2)
-		BA_GEN_r   <- model2sum$solutions[2,1]
-		BA_GEN_rlb <- model2sum$solutions[2,2]
-		BA_GEN_rub <- model2sum$solutions[2,3]
-		BA_GEN_post_ests[luper,] <- c(BA_GEN_r, (diag(var(model2$Sol)))[2])  # the ES & the posterior variance
+		BAYES_GEN_r   <- model2sum$solutions[2,1]
+		BAYES_GEN_rlb <- model2sum$solutions[2,2]
+		BAYES_GEN_rub <- model2sum$solutions[2,3]
+		BAYES_GEN_post_ests[luper,] <- c(BAYES_GEN_r, (diag(var(model2$Sol)))[2])  # the ES & the posterior variance
 	}
 
-results_BA_GEN[luper,] <- cbind(BA_GEN_priorES, BA_GEN_priorSE, BA_GEN_rlb, BA_GEN_r, BA_GEN_rub)
+results_BAYES_GEN[luper,] <- cbind(BAYES_GEN_priorES, BAYES_GEN_priorSE, BAYES_GEN_rlb, BAYES_GEN_r, BAYES_GEN_rub)
 
 }
 
-results_BA_GEN <- data.frame(cbind( 1:Nstudies, as.matrix(donnes_RN), results_BA_GEN ))
-#dimnames(results_BA_GEN) <-list(rep("", dim(results_BA_GEN)[1]))
-colnames(results_BA_GEN) <- 
+results_BAYES_GEN <- data.frame(cbind( 1:Nstudies, as.matrix(donnes_RN), results_BAYES_GEN ))
+#dimnames(results_BAYES_GEN) <-list(rep("", dim(results_BAYES_GEN)[1]))
+colnames(results_BAYES_GEN) <- 
     c('Study','Study N','Study ES','prior ES','prior SE','ES.lb','ES','ES.ub')
 
 
 # convert r to d or g effect sizes, if requested
 if (ES_type_OUT == 'd' | ES_type_OUT == 'g') {
-	results_BA_GEN_dg <- results_BA_GEN[,c('Study','Study N','Study ES','prior ES','ES.lb','ES','ES.ub')]
+	results_BAYES_GEN_dg <- results_BAYES_GEN[,c('Study','Study N','Study ES','prior ES','ES.lb','ES','ES.ub')]
 	for (lupe in 3:7) {
-		results_BA_GEN_dg[,lupe] <-
-			CONVERT_ES(ES = results_BA_GEN_dg[,lupe], ES_var = NULL, 
+		results_BAYES_GEN_dg[,lupe] <-
+			CONVERT_ES(ES = results_BAYES_GEN_dg[,lupe], ES_var = NULL, 
 		              ES_type_IN='r', ES_type_OUT=ES_type_OUT, 
-		              totalN=results_BA_GEN_dg[,'Study N'], verbose = FALSE)[paste(ES_type_OUT)]
+		              totalN=results_BAYES_GEN_dg[,'Study N'], verbose = FALSE)[paste(ES_type_OUT)]
 	}
-	results_BA_GEN <- results_BA_GEN_dg
+	results_BAYES_GEN <- results_BAYES_GEN_dg
 }
 
 
 if (verbose) {
 	message('\n\n\nBayesian estimates based on generated data:\n')
 
-	print(round(results_BA_GEN,3), print.gap=4)
+	print(round(results_BAYES_GEN,3), print.gap=4)
 
-	# if (ES_type_OUT == 'r') print(round(results_BA_GEN,3), print.gap=4)
+	# if (ES_type_OUT == 'r') print(round(results_BAYES_GEN,3), print.gap=4)
 	
-	# if (ES_type_OUT == 'd' | ES_type_OUT == 'g') print(round(results_BA_GEN_dg,3), print.gap=4)
+	# if (ES_type_OUT == 'd' | ES_type_OUT == 'g') print(round(results_BAYES_GEN_dg,3), print.gap=4)
 }
 
 }
@@ -637,25 +774,27 @@ if (verbose) {
 ###########################  Bayes raw data  #############################
 
 
-if (is.element('raw', Bayes_type) & dtype != 'list') {
+if (is.element('raw', Bayes_type) & dontype != 'raw data') {
 	message('\n\nBayesian raw data analyses were requested but donnes is not a list with raw data.')
 	message('Bayesian raw data analyses cannot be conducted without raw data.\n')
 }
 
-if (is.element('raw', Bayes_type) & dtype == 'list') {
+results_BAYES_RAW <- -9999
 
-BA_RAW_rlb <- BA_RAW_r <- BA_RAW_rub <- NA
+if (is.element('raw', Bayes_type) & dontype == 'raw data' & 
+               (rawdata_type == 'for_correl' | (rawdata_type == 'indep_groups'))) {
+
+BAYES_RAW_rlb <- BAYES_RAW_r <- BAYES_RAW_rub <- NA
 
 # run MCMCglmm, using the effect size & sampling error variance from a MA of previous data
 
 # loop through the studies, treating each subsequent study as the Likelihood
-results_BA_RAW <- matrix(NA,Nstudies,5)
-BA_RAW_post_ests <- matrix(NA,Nstudies,2)
-
+results_BAYES_RAW <- matrix(NA,Nstudies,5)
+BAYES_RAW_post_ests <- matrix(NA,Nstudies,2)
 
 for (luper in 1:Nstudies) {
 
-	dataset1 <- data.frame(donnesRAW[[luper]]); colnames(dataset1) <- c('varIV','varDV')
+	dataset1 <- data.frame(donnes[[luper]]); colnames(dataset1) <- c('varIV','varDV')
 	
 	# standardize data so that the regression estimate is a correlation
 	dataset1 <- data.frame(scale(dataset1))
@@ -671,73 +810,69 @@ for (luper in 1:Nstudies) {
 	if (luper == 1) { 
 		model1 <- MCMCglmm(varDV ~ varIV, data=dataset1, nitt=nitt, burnin=burnin, thin=thin, verbose=FALSE)
 		model1sum <- summary.MCMCglmm(model1)
-		BA_RAW_r   <- model1sum$solutions[2,1]
-		BA_RAW_rlb <- model1sum$solutions[2,2]
-		BA_RAW_rub <- model1sum$solutions[2,3]
-		BA_RAW_priorES <- NA
-		BA_RAW_priorSE <- NA
-		BA_RAW_post_ests[1,] <- c(BA_RAW_r, (diag(var(model1$Sol)))[2])  # the ES & posterior variance
+		BAYES_RAW_r   <- model1sum$solutions[2,1]
+		BAYES_RAW_rlb <- model1sum$solutions[2,2]
+		BAYES_RAW_rub <- model1sum$solutions[2,3]
+		BAYES_RAW_priorES <- NA
+		BAYES_RAW_priorSE <- NA
+		BAYES_RAW_post_ests[1,] <- c(BAYES_RAW_r, (diag(var(model1$Sol)))[2])  # the ES & posterior variance
 	}	
 		  
 	if (luper > 1) { 		
-		if (prior_type == 'MA') {	
+		if (prior_type == 'META') {	
 			priordat <- ESdat[1:(luper-1),]
 			outp_MA_3 <- rma(yi=priordat$yi, vi=priordat$vi, method=rma_method, 
 	                         control=list(stepadj=0.5, maxiter=1000))  # random-effects model
 
 
-			BA_RAW_priorES <- outp_MA_3$b
-			BA_RAW_priorSE <- outp_MA_3$se
-	#		BA_RAW_priorPopV <- outp_MA_3$tau2						
-			BA_RAW_Vprior <- BA_RAW_priorSE**2	
+			BAYES_RAW_priorES <- outp_MA_3$b
+			BAYES_RAW_priorSE <- outp_MA_3$se
+	#		BAYES_RAW_priorPopV <- outp_MA_3$tau2						
+			BAYES_RAW_Vprior <- BAYES_RAW_priorSE**2	
 		}
-		if (prior_type == 'Bayes') {	
+		if (prior_type == 'BAYES') {	
 			# Jarrod Hadfield  https://stat.ethz.ch/pipermail/r-sig-mixed-models/2012q4/019436.html
 			# v <- var(model$Sol)  the variance-covariance matrix
 			# sqrt(diag(v))  the posterior standard deviations (akin to the standard errors) 
-			BA_RAW_priorES <- BA_RAW_post_ests[(luper-1),1]
-			BA_RAW_Vprior  <- BA_RAW_post_ests[(luper-1),2]
-			BA_RAW_priorSE <- sqrt(BA_RAW_Vprior)
+			BAYES_RAW_priorES <- BAYES_RAW_post_ests[(luper-1),1]
+			BAYES_RAW_Vprior  <- BAYES_RAW_post_ests[(luper-1),2]
+			BAYES_RAW_priorSE <- sqrt(BAYES_RAW_Vprior)
 		}
-		priors <- list(B=list(mu=c(0, BA_RAW_priorES), V=diag(c(1, BA_RAW_Vprior))))		
+		priors <- list(B=list(mu=c(0, BAYES_RAW_priorES), V=diag(c(1, BAYES_RAW_Vprior))))		
 		model2 <- MCMCglmm(varDV ~ varIV, data=dataset1, prior=priors, nitt=nitt, burnin=burnin, 
 		                   thin=thin, verbose=FALSE)
 		model2sum <- summary.MCMCglmm(model2)
-		BA_RAW_r   <- model2sum$solutions[2,1]
-		BA_RAW_rlb <- model2sum$solutions[2,2]
-		BA_RAW_rub <- model2sum$solutions[2,3]
-		BA_RAW_post_ests[luper,] <- c(BA_RAW_r, (diag(var(model2$Sol)))[2]) # ES & the posterior variance
+		BAYES_RAW_r   <- model2sum$solutions[2,1]
+		BAYES_RAW_rlb <- model2sum$solutions[2,2]
+		BAYES_RAW_rub <- model2sum$solutions[2,3]
+		BAYES_RAW_post_ests[luper,] <- c(BAYES_RAW_r, (diag(var(model2$Sol)))[2]) # ES & the posterior variance
 	}	
-	results_BA_RAW[luper,] <- cbind(BA_RAW_priorES, BA_RAW_priorSE, BA_RAW_rlb, BA_RAW_r, BA_RAW_rub)
+	results_BAYES_RAW[luper,] <- cbind(BAYES_RAW_priorES, BAYES_RAW_priorSE, BAYES_RAW_rlb, BAYES_RAW_r, BAYES_RAW_rub)
 }
 
-results_BA_RAW <- data.frame(cbind(1:Nstudies, as.matrix(donnes_RN), results_BA_RAW))
-#dimnames(results_BA_RAW) <-list(rep("", dim(results_BA_RAW)[1]))
-colnames(results_BA_RAW) <- 
+results_BAYES_RAW <- data.frame(cbind(1:Nstudies, as.matrix(donnes_RN), results_BAYES_RAW))
+#dimnames(results_BAYES_RAW) <-list(rep("", dim(results_BAYES_RAW)[1]))
+colnames(results_BAYES_RAW) <- 
   c('Study','Study N','Study ES','prior ES','prior SE','ES.lb','ES','ES.ub')
 
 
 # convert r to d or g effect sizes, if requested
 if (ES_type_OUT == 'd' | ES_type_OUT == 'g') {
-	results_BA_RAW_dg <- results_BA_RAW[,c('Study','Study N','Study ES','prior ES','ES.lb','ES','ES.ub')]
+	results_BAYES_RAW_dg <- results_BAYES_RAW[,c('Study','Study N','Study ES','prior ES','ES.lb','ES','ES.ub')]
 	for (lupe in 3:7) {
-		results_BA_RAW_dg[,lupe] <-
-			CONVERT_ES(ES = results_BA_RAW_dg[,lupe], ES_var = NULL, 
+		results_BAYES_RAW_dg[,lupe] <-
+			CONVERT_ES(ES = results_BAYES_RAW_dg[,lupe], ES_var = NULL, 
 		              ES_type_IN='r', ES_type_OUT=ES_type_OUT, 
-		              totalN=results_BA_RAW_dg[,'Study N'], verbose = FALSE)[paste(ES_type_OUT)]
+		              totalN=results_BAYES_RAW_dg[,'Study N'], verbose = FALSE)[paste(ES_type_OUT)]
 	}
-	results_BA_RAW <- results_BA_RAW_dg
+	results_BAYES_RAW <- results_BAYES_RAW_dg
 }
 
 
 if (verbose) {
 	message('\n\n\nBayesian estimates based on the raw data:\n')
 
-	print(round(results_BA_RAW,3), print.gap=4)
-
-	# if (ES_type_OUT == 'r') print(round(results_BA_RAW,3), print.gap=4)
-	
-	# if (ES_type_OUT == 'd' | ES_type_OUT == 'g') print(round(results_BA_RAW_dg,3), print.gap=4)
+	print(round(results_BAYES_RAW,3), print.gap=4)
 }
 
 }
@@ -748,10 +883,10 @@ if (verbose) {
 ###########################  agreement & consistency  ##########################
 
 
-# the CUM MA conclusion
-if (results_CUM[,'ES.lb'][Nstudies] < 0 & results_CUM[,'ES.ub'][Nstudies] < 0)  effect <- 'negeff'
-if (results_CUM[,'ES.lb'][Nstudies] > 0 & results_CUM[,'ES.ub'][Nstudies] > 0)  effect <- 'poseff'
-if (results_CUM[,'ES.lb'][Nstudies] < 0 & results_CUM[,'ES.ub'][Nstudies] > 0)  effect <- 'noeff'
+# the CUM_META MA conclusion
+if (results_CUM_META[,'ES.lb'][Nstudies] < 0 & results_CUM_META[,'ES.ub'][Nstudies] < 0)  effect <- 'negeff'
+if (results_CUM_META[,'ES.lb'][Nstudies] > 0 & results_CUM_META[,'ES.ub'][Nstudies] > 0)  effect <- 'poseff'
+if (results_CUM_META[,'ES.lb'][Nstudies] < 0 & results_CUM_META[,'ES.ub'][Nstudies] > 0)  effect <- 'noeff'
 
 # NHST -- agreement with final, & consistency
 sigposNHST <- signegNHST <- nonsigNHST <- 0
@@ -761,187 +896,191 @@ for (luper in 1:nrow(results_NHST)) {
 	if (results_NHST[luper,'ES.lb'] < 0 & results_NHST[luper,'ES.ub'] > 0) nonsigNHST <- nonsigNHST + 1
 }
 
-# percentage of NHST studies that agreed with the CUM MA conclusion
-if (effect == 'negeff') agreeNHST <- signegNHST / nrow(results_NHST)
-if (effect == 'poseff') agreeNHST <- sigposNHST / nrow(results_NHST)
-if (effect == 'noeff')  agreeNHST <- nonsigNHST / nrow(results_NHST)
+# percentage of NHST studies that agreed with the CUM_META conclusion
+if (effect == 'negeff') agree_NHST <- signegNHST / nrow(results_NHST)
+if (effect == 'poseff') agree_NHST <- sigposNHST / nrow(results_NHST)
+if (effect == 'noeff')  agree_NHST <- nonsigNHST / nrow(results_NHST)
 
 # the most common conclusion, as a proportion
-consistNHST <- max(c(sigposNHST,signegNHST,nonsigNHST)) / nrow(results_NHST) 
+consist_NHST <- max(c(sigposNHST,signegNHST,nonsigNHST)) / nrow(results_NHST) 
 
 
 
-# CUM  -- agreement with final, & consistency
-sigposCUM <- signegCUM <- nonsigCUM <- 0
-for (luper in 1:nrow(results_CUM)) {
-	if (results_CUM[luper,'ES.lb'] < 0 & results_CUM[luper,'ES.ub'] < 0) signegCUM <- signegCUM + 1
-	if (results_CUM[luper,'ES.lb'] > 0 & results_CUM[luper,'ES.ub'] > 0) sigposCUM <- sigposCUM + 1
-	if (results_CUM[luper,'ES.lb'] < 0 & results_CUM[luper,'ES.ub'] > 0) nonsigCUM <- nonsigCUM + 1
+# CUM_META  -- agreement with final, & consistency
+sigposCUM_META <- signegCUM_META <- nonsigCUM_META <- 0
+for (luper in 1:nrow(results_CUM_META)) {
+	if (results_CUM_META[luper,'ES.lb'] < 0 & results_CUM_META[luper,'ES.ub'] < 0) signegCUM_META <- signegCUM_META + 1
+	if (results_CUM_META[luper,'ES.lb'] > 0 & results_CUM_META[luper,'ES.ub'] > 0) sigposCUM_META <- sigposCUM_META + 1
+	if (results_CUM_META[luper,'ES.lb'] < 0 & results_CUM_META[luper,'ES.ub'] > 0) nonsigCUM_META <- nonsigCUM_META + 1
 }
 
-# percentage of CUM studies that agreed with the CUM MA conclusion
-if (effect == 'negeff') agreeCUM <- signegCUM / nrow(results_CUM)
-if (effect == 'poseff') agreeCUM <- sigposCUM / nrow(results_CUM)
-if (effect == 'noeff')  agreeCUM <- nonsigCUM / nrow(results_CUM)
+# percentage of CUM_META studies that agreed with the CUM_META conclusion
+if (effect == 'negeff') agree_CUM_META <- signegCUM_META / nrow(results_CUM_META)
+if (effect == 'poseff') agree_CUM_META <- sigposCUM_META / nrow(results_CUM_META)
+if (effect == 'noeff')  agree_CUM_META <- nonsigCUM_META / nrow(results_CUM_META)
 
 # the most common conclusion, as a proportion
-consistCUM <- max(c(sigposCUM,signegCUM,nonsigCUM)) / nrow(results_CUM)
+consist_CUM_META <- max(c(sigposCUM_META,signegCUM_META,nonsigCUM_META)) / nrow(results_CUM_META)
 
 
-#print(results_BA_SR)
 
+if (!is.null(donnes_RN)) {
 
-if (is.element('Schmidt_Raju', Bayes_type)) {
-	agreeBA_SR <- consistBA_SR <- NA
-	# BAYES_SR -- agreement with final, & consistency
-	sigposBA_SR <- signegBA_SR <- nonsigBA_SR <- 0
-	for (luper in 1:nrow(results_BA_SR)) {
-		if (results_BA_SR[luper,'ES.lb'] < 0 & results_BA_SR[luper,'ES.ub'] < 0) signegBA_SR <- signegBA_SR + 1
-		if (results_BA_SR[luper,'ES.lb'] > 0 & results_BA_SR[luper,'ES.ub'] > 0) sigposBA_SR <- sigposBA_SR + 1
-		if (results_BA_SR[luper,'ES.lb'] < 0 & results_BA_SR[luper,'ES.ub'] > 0) nonsigBA_SR <- nonsigBA_SR + 1
+	if (is.element('Schmidt_Raju', Bayes_type)) {
+		agree_BAYES_SR <- consist_BAYES_SR <- NA
+		# BAYES_SR -- agreement with final, & consistency
+		sigposBAYES_SR <- signegBAYES_SR <- nonsigBAYES_SR <- 0
+		for (luper in 1:nrow(results_BAYES_SR)) {
+			if (results_BAYES_SR[luper,'ES.lb'] < 0 & results_BAYES_SR[luper,'ES.ub'] < 0) signegBAYES_SR <- signegBAYES_SR + 1
+			if (results_BAYES_SR[luper,'ES.lb'] > 0 & results_BAYES_SR[luper,'ES.ub'] > 0) sigposBAYES_SR <- sigposBAYES_SR + 1
+			if (results_BAYES_SR[luper,'ES.lb'] < 0 & results_BAYES_SR[luper,'ES.ub'] > 0) nonsigBAYES_SR <- nonsigBAYES_SR + 1
+		}
+		# percentage of BAYES_SR studies that agreed with the CUM_META conclusion
+		if (effect == 'negeff') agree_BAYES_SR <- signegBAYES_SR / nrow(results_BAYES_SR)
+		if (effect == 'poseff') agree_BAYES_SR <- sigposBAYES_SR / nrow(results_BAYES_SR)
+		if (effect == 'noeff')  agree_BAYES_SR <- nonsigBAYES_SR / nrow(results_BAYES_SR)
+		
+		# the most common conclusion, as a proportion
+		consist_BAYES_SR <- max(c(sigposBAYES_SR,signegBAYES_SR,nonsigBAYES_SR)) / nrow(results_BAYES_SR) 
 	}
-	# percentage of BA_SR studies that agreed with the CUM MA conclusion
-	if (effect == 'negeff') agreeBA_SR <- signegBA_SR / nrow(results_BA_SR)
-	if (effect == 'poseff') agreeBA_SR <- sigposBA_SR / nrow(results_BA_SR)
-	if (effect == 'noeff')  agreeBA_SR <- nonsigBA_SR / nrow(results_BA_SR)
 	
-	# the most common conclusion, as a proportion
-	consistBA_SR <- max(c(sigposBA_SR,signegBA_SR,nonsigBA_SR)) / nrow(results_BA_SR) 
-}
-
-
-if (is.element('generated', Bayes_type)) {
-	# generated BAYES -- agreement with final, & consistency
-	sigposBA_GEN <- signegBA_GEN <- nonsigBA_GEN <- 0
-	for (luper in 1:nrow(results_BA_GEN)) {
-		if (results_BA_GEN[luper,'ES.lb'] < 0 & results_BA_GEN[luper,'ES.ub'] < 0) signegBA_GEN <- signegBA_GEN + 1
-		if (results_BA_GEN[luper,'ES.lb'] > 0 & results_BA_GEN[luper,'ES.ub'] > 0) sigposBA_GEN <- sigposBA_GEN + 1
-		if (results_BA_GEN[luper,'ES.lb'] < 0 & results_BA_GEN[luper,'ES.ub'] > 0) nonsigBA_GEN <- nonsigBA_GEN + 1
+	
+	if (is.element('generated', Bayes_type)) {
+		# generated BAYES -- agreement with final, & consistency
+		sigposBAYES_GEN <- signegBAYES_GEN <- nonsigBAYES_GEN <- 0
+		for (luper in 1:nrow(results_BAYES_GEN)) {
+			if (results_BAYES_GEN[luper,'ES.lb'] < 0 & results_BAYES_GEN[luper,'ES.ub'] < 0) signegBAYES_GEN <- signegBAYES_GEN + 1
+			if (results_BAYES_GEN[luper,'ES.lb'] > 0 & results_BAYES_GEN[luper,'ES.ub'] > 0) sigposBAYES_GEN <- sigposBAYES_GEN + 1
+			if (results_BAYES_GEN[luper,'ES.lb'] < 0 & results_BAYES_GEN[luper,'ES.ub'] > 0) nonsigBAYES_GEN <- nonsigBAYES_GEN + 1
+		}
+		# percentage of BAYES_GEN studies that agreed with the CUM_META conclusion
+		if (effect == 'negeff') agree_BAYES_GEN <- signegBAYES_GEN / nrow(results_BAYES_GEN)
+		if (effect == 'poseff') agree_BAYES_GEN <- sigposBAYES_GEN / nrow(results_BAYES_GEN)
+		if (effect == 'noeff')  agree_BAYES_GEN <- nonsigBAYES_GEN / nrow(results_BAYES_GEN)
+		
+		# the most common conclusion, as a proportion
+		consist_BAYES_GEN <- max(c(sigposBAYES_GEN,signegBAYES_GEN,nonsigBAYES_GEN)) / nrow(results_BAYES_GEN) 
 	}
-	# percentage of BA_GEN studies that agreed with the CUM MA conclusion
-	if (effect == 'negeff') agreeBA_GEN <- signegBA_GEN / nrow(results_BA_GEN)
-	if (effect == 'poseff') agreeBA_GEN <- sigposBA_GEN / nrow(results_BA_GEN)
-	if (effect == 'noeff')  agreeBA_GEN <- nonsigBA_GEN / nrow(results_BA_GEN)
 	
-	# the most common conclusion, as a proportion
-	consistBA_GEN <- max(c(sigposBA_GEN,signegBA_GEN,nonsigBA_GEN)) / nrow(results_BA_GEN) 
-}
-
-
-if (is.element('raw', Bayes_type) & dtype == 'list') {
-	agreeBA_RAW <- consistBA_RAW <- NA
-	# raw BAYES -- agreement with final, & consistency
-	sigposBA_RAW <- signegBA_RAW <- nonsigBA_RAW <- 0
-	for (luper in 1:nrow(results_BA_RAW)) {
-		if (results_BA_RAW[luper,'ES.lb'] < 0 & results_BA_RAW[luper,'ES.ub'] < 0) signegBA_RAW <- signegBA_RAW + 1
-		if (results_BA_RAW[luper,'ES.lb'] > 0 & results_BA_RAW[luper,'ES.ub'] > 0) sigposBA_RAW <- sigposBA_RAW + 1
-		if (results_BA_RAW[luper,'ES.lb'] < 0 & results_BA_RAW[luper,'ES.ub'] > 0) nonsigBA_RAW <- nonsigBA_RAW + 1
+	
+	#if (is.element('raw', Bayes_type) & dontype == 'raw data') {
+	if (is.element('raw', Bayes_type) & results_BAYES_RAW != -9999) {
+		agree_BAYES_RAW <- consist_BAYES_RAW <- NA
+		# raw BAYES -- agreement with final, & consistency
+		sigposBAYES_RAW <- signegBAYES_RAW <- nonsigBAYES_RAW <- 0
+		for (luper in 1:nrow(results_BAYES_RAW)) {
+			if (results_BAYES_RAW[luper,'ES.lb'] < 0 & results_BAYES_RAW[luper,'ES.ub'] < 0) signegBAYES_RAW <- signegBAYES_RAW + 1
+			if (results_BAYES_RAW[luper,'ES.lb'] > 0 & results_BAYES_RAW[luper,'ES.ub'] > 0) sigposBAYES_RAW <- sigposBAYES_RAW + 1
+			if (results_BAYES_RAW[luper,'ES.lb'] < 0 & results_BAYES_RAW[luper,'ES.ub'] > 0) nonsigBAYES_RAW <- nonsigBAYES_RAW + 1
+		}
+		# percentage of BAYES_RAW studies that agreed with the CUM_META conclusion
+		if (effect == 'negeff') agree_BAYES_RAW <- signegBAYES_RAW / nrow(results_BAYES_RAW)
+		if (effect == 'poseff') agree_BAYES_RAW <- sigposBAYES_RAW / nrow(results_BAYES_RAW)
+		if (effect == 'noeff')  agree_BAYES_RAW <- nonsigBAYES_RAW / nrow(results_BAYES_RAW)
+		
+		# the most common conclusion, as a proportion
+		consist_BAYES_RAW <- max(c(sigposBAYES_RAW,signegBAYES_RAW,nonsigBAYES_RAW)) / nrow(results_BAYES_RAW) 
 	}
-	# percentage of BA_RAW studies that agreed with the CUM MA conclusion
-	if (effect == 'negeff') agreeBA_RAW <- signegBA_RAW / nrow(results_BA_RAW)
-	if (effect == 'poseff') agreeBA_RAW <- sigposBA_RAW / nrow(results_BA_RAW)
-	if (effect == 'noeff')  agreeBA_RAW <- nonsigBA_RAW / nrow(results_BA_RAW)
-	
-	# the most common conclusion, as a proportion
-	consistBA_RAW <- max(c(sigposBA_RAW,signegBA_RAW,nonsigBA_RAW)) / nrow(results_BA_RAW) 
+
 }
-
-
-
 
 
 ####################################  output  #######################################
 
 if (verbose) {
 
-message('\n\nNumber of studies: ', Nstudies)
+	message('\n\nFinal, all-studies-combined results:')
+	
+	message('\n   Cumulative Meta-Analysis:    ES = ', round(results_CUM_META[,'ES'][Nstudies],3),
+	        '   ES.lb = ', round(results_CUM_META[,'ES.lb'][Nstudies],3),
+	        '   ES.ub = ', round(results_CUM_META[,'ES.ub'][Nstudies],3))
+	
+if (!is.null(donnes_RN)) {
 
-message('\n\nThe confidence interval for the analyses: ', CI)
+	if (is.element('Schmidt_Raju', Bayes_type)) 
+		message('\n   Bayesian (Schmidt-Raju):     ES = ', round(results_BAYES_SR$ES[Nstudies],3),
+		        '   ES.lb = ', round(results_BAYES_SR$ES.lb[Nstudies],3),
+		        '   ES.ub = ', round(results_BAYES_SR$ES.ub[Nstudies],3))
+	
+	if (is.element('generated', Bayes_type)) 
+		message('\n   Bayesian (generated data):   ES = ', round(results_BAYES_GEN$ES[Nstudies],3),
+		        '   ES.lb = ', round(results_BAYES_GEN$ES.lb[Nstudies],3),
+		        '   ES.ub = ', round(results_BAYES_GEN$ES.ub[Nstudies],3))
+	
+	if (is.element('raw', Bayes_type) & results_BAYES_RAW != -9999) 
+		message('\n   Bayesian (raw data):         ES = ', round(results_BAYES_RAW$ES[Nstudies],3),
+		        '   ES.lb = ', round(results_BAYES_RAW$ES.lb[Nstudies],3),
+		        '   ES.ub = ', round(results_BAYES_RAW$ES.ub[Nstudies],3))
 
-message('\n\nFinal, all-studies-combined results:')
+}	
+	
+	if (rma_method != 'FE') {
+		message('\n\n\nMeta-analysis heterogeneity statistics:')
+		message('\n   Total Var. = ',round(tau2,3))
+		message('\n   Q = ', round(outp_MA_1$QE,3), '    p = ', round(outp_MA_1$QEp,5))
+		message('\n   tau2 = ',  round(tau2,3), '    tau2.lb = ', round(tau2LB,3), '    tau2.ub = ', round(tau2UB,3))
+		message('\n   tau  = ',   round(tau,3), '    tau.lb = ', round(tauLB,3),  '    tau.ub = ', round(tauUB,3))
+		message('\n   Isq. = ',  round(isq,3),  '    Isq.lb = ', round(isqLB,3),  '    Isq.ub = ', round(isqUB,3))
+		message('\n   Hsq. = ',  round(hsq,3),  '    Hsq.lb = ', round(hsqLB,3),  '    Hsq.ub = ', round(hsqUB,3))
+	
+		message('\n\ntau2 (or tau-squared) is the variation in effect sizes')
+		message('(between-study variance) in a random-effects meta-analysis.')
+		message('It is the variance in the true effect sizes.')
+		
+		message('\ntau is the square root of tau-squared. tau is the standard')
+		message('deviation of the true effect sizes.')
+		
+		message('\nIsq. estimates (in percent) how much of the total variability')
+		message('in the effect size estimates (which is composed of heterogeneity plus')
+		message('sampling variability) can be attributed to heterogeneity among the true effects.')
+		
+		message('\nHsq. estimates the ratio of the total amount of variability in')
+		message('the effect size estimates to the amount of sampling variability.\n')
+	}	
+	
+	
+	message('\n\nConsistency & agreement rates:')
+	
+	message('\n   NHST:                               consistency = ', 
+		round(consist_NHST,3), '    agreement = ', round(agree_NHST,3))
+	
+	message('\n   Cumulative Meta-Analysis:           consistency = ', 
+		round(consist_CUM_META,3),  '    agreement = ', round(agree_CUM_META,3))
+	
+if (!is.null(donnes_RN)) {
 
-message('\n   Cumulative Meta-Analysis:    ES = ', round(results_CUM[,'ES'][Nstudies],3),
-        '   ES.lb = ', round(results_CUM[,'ES.lb'][Nstudies],3),
-        '   ES.ub = ', round(results_CUM[,'ES.ub'][Nstudies],3))
+	if (is.element('Schmidt_Raju', Bayes_type)) 
+		message('\n   Bayesian (Schmidt & Raju, 2007):    consistency = ', 
+			round(consist_BAYES_SR,3),   '    agreement = ', round(agree_BAYES_SR,3))
+	
+	if (is.element('generated', Bayes_type)) 
+		message('\n   Bayesian (generated data):          consistency = ', 
+			round(consist_BAYES_GEN,3),   '    agreement = ', round(agree_BAYES_GEN,3))
+	
+	if (is.element('raw', Bayes_type) & results_BAYES_RAW != -9999) 
+		message('\n   Bayesian (raw data):                consistency = ', 
+			round(consist_BAYES_RAW,3),   '    agreement = ', round(agree_BAYES_RAW,3))
 
-if (is.element('Schmidt_Raju', Bayes_type)) 
-	message('\n   Bayesian (Schmidt-Raju):     ES = ', round(results_BA_SR$ES[Nstudies],3),
-	        '   ES.lb = ', round(results_BA_SR$ES.lb[Nstudies],3),
-	        '   ES.ub = ', round(results_BA_SR$ES.ub[Nstudies],3))
-
-if (is.element('generated', Bayes_type)) 
-	message('\n   Bayesian (generated data):   ES = ', round(results_BA_GEN$ES[Nstudies],3),
-	        '   ES.lb = ', round(results_BA_GEN$ES.lb[Nstudies],3),
-	        '   ES.ub = ', round(results_BA_GEN$ES.ub[Nstudies],3))
-
-if (is.element('raw', Bayes_type) & dtype == 'list') 
-	message('\n   Bayesian (raw data):         ES = ', round(results_BA_RAW$ES[Nstudies],3),
-	        '   ES.lb = ', round(results_BA_RAW$ES.lb[Nstudies],3),
-	        '   ES.ub = ', round(results_BA_RAW$ES.ub[Nstudies],3))
-
-
-message('\n\n\nMeta-analysis heterogeneity statistics:')
-message('\n   Total Var. = ',round(tau2,3))
-message('\n   Q = ', round(outp_MA_1$QE,3), '    p = ', round(outp_MA_1$QEp,5))
-message('\n   tau2 = ',  round(tau2,3), '    tau2.lb = ', round(tau2LB,3), '    tau2.ub = ', round(tau2UB,3))
-message('\n   tau  = ',   round(tau,3), '    tau.lb = ', round(tauLB,3),  '    tau.ub = ', round(tauUB,3))
-message('\n   Isq. = ',  round(isq,3),  '    Isq.lb = ', round(isqLB,3),  '    Isq.ub = ', round(isqUB,3))
-message('\n   Hsq. = ',  round(hsq,3),  '    Hsq.lb = ', round(hsqLB,3),  '    Hsq.ub = ', round(hsqUB,3))
-
-
-message('\n\ntau2 (or tau-squared) is the variation in effect sizes')
-message('(between-study variance) in a random-effects meta-analysis.')
-message('It is the variance in the true effect sizes.')
-
-message('\ntau is the square root of tau-squared. tau is the standard')
-message('deviation of the true effect sizes.')
-
-message('\nIsq. estimates (in percent) how much of the total variability')
-message('in the effect size estimates (which is composed of heterogeneity plus')
-message('sampling variability) can be attributed to heterogeneity among the true effects.')
-
-message('\nHsq. estimates the ratio of the total amount of variability in')
-message('the effect size estimates to the amount of sampling variability.\n')
-
-
-message('\n\nConsistency & agreement rates:')
-
-message('\n   NHST:                               consistency = ', 
-	round(consistNHST,3), '    agreement = ', round(agreeNHST,3))
-
-message('\n   Cumulative Meta-Analysis:           consistency = ', 
-	round(consistCUM,3),  '    agreement = ', round(agreeCUM,3))
-
-if (is.element('Schmidt_Raju', Bayes_type)) 
-	message('\n   Bayesian (Schmidt & Raju, 2007):    consistency = ', 
-		round(consistBA_SR,3),   '    agreement = ', round(agreeBA_SR,3))
-
-if (is.element('generated', Bayes_type)) 
-	message('\n   Bayesian (generated data):          consistency = ', 
-		round(consistBA_GEN,3),   '    agreement = ', round(agreeBA_GEN,3))
-
-if (is.element('raw', Bayes_type) & dtype == 'list') 
-	message('\n   Bayesian (raw data):                consistency = ', 
-		round(consistBA_RAW,3),   '    agreement = ', round(agreeBA_RAW,3))
-
-message('\n\nThe consistency rate is the proportion of times that the most common')
-message('conclusion was reached for an analytic method for a pool of effect sizes.')
-message('Three conclusions are possible for each effect size: a positive effect, a')
-message('negative effect, and no effect. The signs of the effect sizes and the')
-message('possible inclusion of a zero value in a confidence interval were used to')
-message('make these categorizations (e.g., a "negative effect" conclusion was when a')
-message('negative effect size had a confidence interval that did not include zero).')
-
-message('\nThe number of times each of the three possible conclusions occurred for a')
-message('pool of effect sizes was counted, and the consistency rate was based on the')
-message('most common conclusion.')
-
-message('\nThe agreement rate for a pool of effect sizes is the proportion of times')
-message('that the conclusions for individual studies were identical to the')
-message('conclusion (re: the same three categories) of the final,')
-message('all-studies-combined meta-analysis.')
-
-message('\n')
+}
+	
+	message('\n\nThe consistency rate is the proportion of times that the most common')
+	message('conclusion was reached for an analytic method for a pool of effect sizes.')
+	message('Three conclusions are possible for each effect size: a positive effect, a')
+	message('negative effect, and no effect. The signs of the effect sizes and the')
+	message('possible inclusion of a zero value in a confidence interval were used to')
+	message('make these categorizations (e.g., a "negative effect" conclusion was when a')
+	message('negative effect size had a confidence interval that did not include zero).')
+	
+	message('\nThe number of times each of the three possible conclusions occurred for a')
+	message('pool of effect sizes was counted, and the consistency rate was based on the')
+	message('most common conclusion.')
+	
+	message('\nThe agreement rate for a pool of effect sizes is the proportion of times')
+	message('that the conclusions for individual studies were identical to the')
+	message('conclusion (re: the same three categories) of the final,')
+	message('all-studies-combined meta-analysis.')
+	
+	message('\n')
 
 }
 
@@ -950,29 +1089,34 @@ message('\n')
 
 nopingpongOutput <- list(
 	results_NHST = results_NHST, 	
-	results_CUM = results_CUM, 
-	ES_MA    = results_CUM[,'ES'][Nstudies],  
-	ES_MA_lb = results_CUM[,'ES.lb'][Nstudies],  
-	ES_MA_ub = results_CUM[,'ES.ub'][Nstudies],
+	results_CUM_META = results_CUM_META, 
+	ES_MA    = results_CUM_META[,'ES'][Nstudies],  
+	ES_MA_lb = results_CUM_META[,'ES.lb'][Nstudies],  
+	ES_MA_ub = results_CUM_META[,'ES.ub'][Nstudies],
 	Q = outp_MA_1$QE, p_Q = outp_MA_1$QEp,
 	tau2 = tau2, tau2LB = tau2LB, tau2UB = tau2UB,
 	tau = tau, tauLB = tauLB, tauUB = tauUB,
 	isq = isq, isqLB = isqLB, isqUB = isqUB,
 	hsq = hsq, hsqLB = hsqLB, hsqUB = hsqUB,
-	consistNHST = consistNHST, agreeNHST = agreeNHST,
-	consistCUM = consistCUM, agreeCUM = agreeCUM )
+	consist_NHST = consist_NHST, agree_NHST = agree_NHST,
+	consist_CUM_META = consist_CUM_META, agree_CUM_META = agree_CUM_META,
+	biasStats = biasStats )
 
-if (is.element('Schmidt_Raju', Bayes_type))
-    nopingpongOutput <- c(nopingpongOutput, list(results_BA_SR = results_BA_SR, 
-	consistBA_SR = consistBA_SR, agreeBA_SR = agreeBA_SR) )
+if (!is.null(donnes_RN)) {
 
-if (is.element('generated', Bayes_type))  
-    nopingpongOutput <- c(nopingpongOutput, list(results_BA_GEN = results_BA_GEN,
-	consistBA_GEN = consistBA_GEN, agreeBA_GEN = agreeBA_GEN ) )
-		
-if (is.element('raw', Bayes_type) & dtype == 'list')
-    nopingpongOutput <- c(nopingpongOutput, list(results_BA_RAW = results_BA_RAW,
-	consistBA_RAW = consistBA_RAW, agreeBA_RAW = agreeBA_RAW) )
+	if (is.element('Schmidt_Raju', Bayes_type))
+	    nopingpongOutput <- c(nopingpongOutput, list(results_BAYES_SR = results_BAYES_SR, 
+		consist_BAYES_SR = consist_BAYES_SR, agree_BAYES_SR = agree_BAYES_SR) )
+	
+	if (is.element('generated', Bayes_type))  
+	    nopingpongOutput <- c(nopingpongOutput, list(results_BAYES_GEN = results_BAYES_GEN,
+		consist_BAYES_GEN = consist_BAYES_GEN, agree_BAYES_GEN = agree_BAYES_GEN ) )
+			
+	if (is.element('raw', Bayes_type) & results_BAYES_RAW != -9999)
+	    nopingpongOutput <- c(nopingpongOutput, list(results_BAYES_RAW = results_BAYES_RAW,
+		consist_BAYES_RAW = consist_BAYES_RAW, agree_BAYES_RAW = agree_BAYES_RAW) )
+
+}
 
 class(nopingpongOutput) <- "NO.PING.PONG"
 

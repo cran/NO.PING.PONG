@@ -149,7 +149,9 @@ if (ES_type_IN == 'd' | ES_type_IN == 'g') {
 		# do not have grp Ns or Vd
 		if (!grpNs & is.null(Vd)) {    	
 			aa <- 4
-			r <- d / sqrt(d^2 + aa)
+			# r <- d / sqrt(d^2 + aa)
+			r <- sqrt( d^2 / (d^2 + 4) )		 
+
 		}	
 	
 	

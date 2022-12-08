@@ -4,7 +4,7 @@
 \description{Provides plots of the output from the NO.PING.PONG function for a 
 	sequence of studies}
 \usage{PLOT_NO.PING.PONG(nopingpongOutput,
-	                  plot_this = c('NHST','MA','Bayes_SR'),
+	                  plot_this = c('NHST','CUM_META','BAYES_SR'),
 	                  plot_save = FALSE, plot_save_type = 'png', 
 	                  plot_title=NULL, Xrange=NULL)}
 \arguments{
@@ -13,13 +13,13 @@
 
   \item{plot_this}{
   \code{}The kind of output data to be plotted. The options are one or any
-   combination of 'NHST', 'MA', 'Bayes_gen', 'Bayes_raw', and 'Bayes_SR'. 
-   'MA' is for meta-analysis results;
-   'Bayes_gen' is for results based on Bayesian generated data analyses;
-   'Bayes_raw' is for results based on Bayesian raw data analyses;
-   'Bayes_SR' is for results based on the Schmidt-Raju (2007) Bayesian method.
+   combination of 'NHST', 'CUM_META', 'BAYES_GEN', 'BAYES_RAW', and 'BAYES_SR'. 
+   'CUM_META' is for meta-analysis results;
+   'BAYES_GEN' is for results based on Bayesian generated data analyses;
+   'BAYES_RAW' is for results based on Bayesian raw data analyses;
+   'BAYES_SR' is for results based on the Schmidt-Raju (2007) Bayesian method.
    The default is
-   plot_this = c('NHST', 'MA', 'Bayes_SR').}
+   plot_this = c('NHST', 'CUM_META', 'BAYES_SR').}
   
   \item{plot_save}{
   \code{}Should a plot be saved to disk? TRUE or FALSE (the default).}
@@ -42,11 +42,10 @@
 	and the x axis range for the plot.}
 \value{A plot is produced, but there are no returned values.}
 \references{
-       {O'Connor, B. P., & Ermacora, D. (2021). Illustrations of why 
-       	previous findings should be taken into account when evaluating new datasets. 
-       	\emph{Canadian Journal of Behavioral Science}. 
-       	Advance online publication. https://doi.org/10.1037/cbs0000259}       	
-\cr\cr {O'Connor, B. P., & Khattar, N. (2021, in press). Controversies regarding 
+       {OConnor, B. P., & Ermacora, D. (2021). Unnecessary ping-pong: Illustrations of 
+       	why previous findings should be taken into account when evaluating new datasets. 
+       	\emph{Canadian Journal of Behavioural Science, 53(3),} 328-341. https://doi.org/10.1037/cbs0000259}       	
+\cr\cr {O'Connor, B. P., & Khattar, N. (2022, in press). Controversies regarding 
 	    null hypothesis testing. In W. O'Donohue, A. Masuda, & S. O. Lilienfeld (Eds.). 
 	    \emph{Questionable research practices: Designing, conducting, and reporting sound 
 	    research in clinical psychology.} Cham, Switzerland: Springer.}    	
@@ -69,29 +68,59 @@ data_Schmidt_Raju <- data.frame(read.table(text=data_Schmidt_Raju, fill=TRUE))
 colnames(data_Schmidt_Raju) <- c('Study','N','r')
 data_Schmidt_Raju <- data_Schmidt_Raju[,2:3]  
 
-NO.PING.PONG(data_Schmidt_Raju, ES_type_IN='r', ES_type_OUT='r', 
-             rma_method='REML',
-             Bayes_type = c('generated', 'Schmidt_Raju'), 
-             prior_type='MA', CI = 95,
-             ES = 'r', N = 'N', vi = NULL,
-             nitt=13000, burnin=3000, thin=10, verbose=TRUE)      
+nppOutput <- NO.PING.PONG(data_Schmidt_Raju, ES_type_IN='r', ES_type_OUT='r', 
+                          rma_method='REML',
+                          Bayes_type = c('Schmidt_Raju', 'generated'), 
+                          prior_type='META', CI = 95,
+                          ES = 'r', N = 'N', vi = NULL,
+                          nitt=13000, burnin=3000, thin=10, verbose=TRUE)      
+
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_SR','BAYES_GEN'))
+
 
 \donttest{ 
 # Cannabis Psychosis data
-nppOutput <- NO.PING.PONG(data_Cannabis_Psychosis, ES_type_IN='d', rma_method='REML', CI = 95,
-                          Bayes_type = c('Schmidt_Raju', 'generated'), prior_type='MA',
+nppOutput <- NO.PING.PONG(data_NPP$Cannabis_Psychosis, ES_type_IN='d', rma_method='REML', CI = 95,
+                          Bayes_type = c('Schmidt_Raju', 'generated'), prior_type='META',
                           ES = 'Std_diff_in_mean', N = 'N', vi = 'Variance',
                           nitt=13000, burnin=3000, thin=10, verbose=TRUE) 
 
-PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','MA'))
-PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','MA','Bayes_gen'))
-PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','MA','Bayes_gen','Bayes_raw'))
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META'))
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_SR','BAYES_GEN'))
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN','BAYES_RAW'))
 
 
 # PopulationR.20 data (has raw data)
-nppOutput = NO.PING.PONG(data_PopulationR.20, Bayes_type = c('generated', 'raw'), prior_type='MA', 
-                         nitt=13000, burnin=3000, thin=10, verbose=TRUE)
+nppOutput <- NO.PING.PONG(data_NPP$PopulationR.20, ES_type_OUT='r',
+                          rawdata_type = 'for_correl',
+                          rma_method='REML',
+                          Bayes_type = c('generated', 'Schmidt_Raju'), 
+                          prior_type='META', CI = 95,
+                          ES = 'r', N = 'N', vi = NULL,
+                          nitt=13000, burnin=3000, thin=10, verbose=TRUE) 
                          
-PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','MA','Bayes_gen','Bayes_raw'))
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN','BAYES_RAW'))
+
+
+
+# raw data for paired samples             
+nppOutput <- 
+NO.PING.PONG(donnes=data_NPP$Paired_Samples, 
+                         ES_type_IN = NULL, ES_type_OUT = 'd', 
+                         rawdata_type = 'paired_samples', 
+                         rma_method = 'REML',
+                         Bayes_type = c('Schmidt_Raju', 'generated', 'raw'), 
+                         prior_type = 'META', CI = 95,
+                         ES = NULL, N = NULL, vi = NULL,
+                         grp1_mn = NULL, grp1_sd = NULL, grp1_n = NULL, 
+                         grp2_mn = NULL, grp2_sd = NULL, grp2_n = NULL, 
+                         gvar_type_OUT = 'd',
+                         paired_samples_ES_type = 'SMCRH',
+                         nitt = 13000, burnin = 3000, thin = 10, verbose = TRUE) 
+
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META'))
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN'))
+PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN','BAYES_RAW'))
+
 }
 }

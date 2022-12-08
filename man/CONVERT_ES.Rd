@@ -70,14 +70,14 @@
 \author{Brian P. O'Connor}
 \examples{
 # convert d effect sizes to r	
-head(data_Omega3_Depression)
-CONVERT_ES(ES = data_Omega3_Depression$SMD, ES_var = NULL, ES_type_IN='d', ES_type_OUT='r', 
-           grp1_N = data_Omega3_Depression$CN, grp2_N = data_Omega3_Depression$EN)
+head(data_NPP$Omega3_Depression)
+CONVERT_ES(ES = data_NPP$Omega3_Depression$SMD, ES_var = NULL, ES_type_IN='d', ES_type_OUT='r', 
+           grp1_N = data_NPP$Omega3_Depression$CN, grp2_N = data_NPP$Omega3_Depression$EN)
 
 \donttest{ 
 # convert r effect sizes to g	
-head(data_Math_Performance)
-CONVERT_ES(ES = data_Math_Performance$r, ES_var = NULL, ES_type_IN='r', ES_type_OUT='g', 
-           totalN = data_Math_Performance$N)
+head(data_NPP$Math_Performance)
+CONVERT_ES(ES = data_NPP$Math_Performance$r, ES_var = NULL, ES_type_IN='r', ES_type_OUT='g', 
+           totalN = data_NPP$Math_Performance$N)
 }
 }
