@@ -27,7 +27,7 @@
        {O'Connor, B. P., & Ermacora, D. (2021). Unnecessary ping-pong: Illustrations of 
        	why previous findings should be taken into account when evaluating new datasets. 
        	\emph{Canadian Journal of Behavioural Science, 53(3),} 328-341. https://doi.org/10.1037/cbs0000259}       	
-\cr\cr {O'Connor, B. P., & Khattar, N. (2022, in press). Controversies regarding 
+\cr\cr {O'Connor, B. P., & Khattar, N. (2022). Controversies regarding 
 	    null hypothesis testing. In W. O'Donohue, A. Masuda, & S. O. Lilienfeld (Eds.). 
 	    \emph{Avoiding Questionable Research Practices in Applied Psychology} (pp. 147-174). 
 	    Cham, Switzerland: Springer Nature Switzerland.}

@@ -6,31 +6,34 @@
 \usage{NO.PING.PONG(donnes, 
              ES_type_IN=NULL, ES_type_OUT='r',
              rawdata_type = 'for_correl',
-             rma_method='REML',
+             ma_method = 'HS',
+             cor_stat = 'ZCOR',
              Bayes_type = c('Schmidt_Raju'), 
-             prior_type='META', CI = 95,
-             ES = NULL, N = NULL, vi = NULL,
+             prior_type='META',
+             ES = NULL, N = NULL, ES_var = NULL,
+             CI_level_out = 95, CI_level_in = 95, CI_in_lb=NULL, CI_in_ub=NULL,
              grp1_mn = NULL, grp1_sd = NULL, grp1_n = NULL, 
-             grp2_mn = NULL, grp2_sd = NULL, grp2_n = NULL,
+             grp2_mn = NULL, grp2_sd = NULL, grp2_n = NULL, 
              gvar_type_OUT = 'd',
              paired_samples_ES_type = NULL,
-             funnel_plot=FALSE, funnel_plot_type='png', funnel_plot_title=NULL, 
-             nitt=53000, burnin=3000, thin=10, 
+             funnel_plot=FALSE, funnel_plot_type='png', funnel_plot_title=NULL,
+             nitt = 53000, burnin = 3000, thin = 10, 
              verbose=TRUE)}
 \arguments{
   \item{donnes}{
   \code{}Either (1) a list with raw data for two numeric variables in each of the multiple list elements
-  (wherein each list element consists of rows of raw data from an individual study), or,  
+  (wherein each list element consists of rows of raw data from an individual study), or  
   (2) a dataframe or matrix wherein each row has summary data for a single study
-  (e.g., has the group means, SDs, & Ns, or d or g or r values, or effect size and variance
+  (e.g., has the group means, SDs, & Ns, or d or g or r or Fisher's z values, or effect size and variance
   estimates).}
 
   \item{ES_type_IN}{
   \code{}(optional) The type of effect sizes, if donnes is a matrix of study-level data rather than raw data. 
-  The options are 'r', 'd', or 'g'.}
+  The options are 'r', 'd', 'g', 'OR', and 'z' (for Fisher's r-to-z transformation).}
 
   \item{ES_type_OUT}{
-  \code{}(optional) The type of effect sizes for the output. The options are 'r' (the default), 'd', and 'g'.}
+  \code{}(optional) The type of effect sizes for the output. The options are 'r' (the default), 
+  'z', 'd', and 'g'.}
 
   \item{rawdata_type}{
   \code{}(optional) The type of raw data, if donnes is a list with raw datasets. The options are 'for_correl'
@@ -38,12 +41,17 @@
    independent groups, as in for an independent groups t-test), and 'paired_samples' (for when 
    the raw data are paired samples, as in for a paired samples t-test).}
 
-  \item{rma_method}{
+  \item{ma_method}{
   \code{}(optional) The method option for the rma function from the metafor package: 'A character 
   string specifying whether a fixed- or a random/mixed-effects model should be fitted. 
   A fixed-effects model (with or without moderators) is fitted when using method="FE". 
   Random/mixed-effects models are fitted by setting method equal to one of the following: 
-  "DL", "HE", "SJ", "ML", "REML", "EB", "HS", or "GENQ". The default is "REML".'}
+  "DL", "HE", "SJ", "ML", "REML", "EB", "HS", or "GENQ". The default is "HS", for the Hunter-Schmidt estimator.}
+
+  \item{cor_stat}{
+  \code{}(optional) The type of correlation statistic to be used when ES_type_OUT='r'.
+  The options are 'COR' (for using Pearson correlation coefficients), and 'ZCOR' (for using
+  Fisher\'s r-to-z transformation').}
 
   \item{Bayes_type}{
   \code{}(optional) The kind(s) of Bayesian analyses to be conducted. The options are one or all
@@ -54,17 +62,29 @@
   \code{}(optional) The type of prior data to be used in the updating analyses (both cumulative and
   Bayesian). The options are 'BAYES' or 'META'. The default is 'META'. See the Details.}
 
-  \item{CI}{
-  \code{}(optional) The confidence interval for the analyses (in whole numbers). The default is 95.}
-
   \item{ES}{
   \code{}(optional) The name of the column in donnes with the effect sizes.}
 
   \item{N}{
   \code{}(optional) The name of the column in donnes with the total Ns.}
 
-  \item{vi}{
+  \item{ES_var}{
   \code{}(optional) The name of the column in donnes with the variances for the effect sizes.}
+
+  \item{CI_level_out}{
+  \code{}(optional) The confidence interval for the output (in whole numbers). The default is 95.}
+
+  \item{CI_level_in}{
+  \code{}(optional) The confidence interval for the input, if provided (in whole numbers). 
+  The default is 95.}
+
+  \item{CI_in_lb}{
+  \code{}(optional) The lower bound confidence interval for input, if provided (in whole numbers). 
+  The default is 95.}
+
+  \item{CI_in_ub}{
+  \code{}(optional) The upper bound confidence interval for the input, if provided (in whole numbers). 
+  The default is 95.}
 
   \item{grp1_mn}{
   \code{}(optional) The name of the column in donnes with the mean for group 1.}
@@ -85,7 +105,10 @@
   \code{}(optional) The name of the column in donnes with the number of cases in group 2.}
 
   \item{gvar_type_OUT}{
-  \code{}(optional) The kind of SMD variance.}
+  \code{}(optional) The kind of variance for when ES_type_OUT is set to g. The options are
+  'd' (the default), for d effect size variance, and 'g', for g effect size variance. 
+  (Authors of published meta-analyses sometimes report d variances when their analyses 
+  were conducted on g effect sizes.)}
 
   \item{paired_samples_ES_type}{
   \code{}(optional) The kind of effect size for the analyses if rawdata_type = 'paired_samples'.
@@ -94,7 +117,7 @@
   change score standardization; Gibbons et al., 1993), 'SMCR' (for the standardized mean 
   change using raw score standardization; Becker, 1988), 'SMCRH' (the default, for the 
   standardized mean change using raw score standardization with heteroscedastic population 
-  variances at the two measurement occasions, Bonett, 2008), or 'ROMC' ( for the log 
+  variances at the two measurement occasions, Bonett, 2008), or 'ROMC' (for the log 
   transformed ratio of means; Lajeunesse, 2011).}
 
   \item{funnel_plot}{
@@ -131,39 +154,52 @@
 	The function relies on the metafor package for the meta-analyses and on the
 	MCMCglmm package for the Bayesian analyses.
 	
-	If the function is provided with only non-correlation coefficient effect sizes and corresponding 
-	variance estimates, then the analyses will be conducted for meta-analyses and NHST. Bayesian 
-	analyses are not possible. However, any kind of effect size coefficient can be used in this case.
+	The function input can be (1) a list with raw datasets, (2) a matrix with study effect 
+	size information, or (3) a matrix with study group means, standard deviations, and Ns.
+	See the Examples below.
 	
-	If the function is provided with correlation coefficient effect sizes and the corresponding 
-	variance estimates, then the analyses can be conducted for NHST, meta-analyses, and Bayesian 
-	analyses.
-		
-	If the function is provided with d or g effect sizes along with the corresponding total 
-	sample sizes, but not with the corresponding variances for the effect sizes, then the
-	d or g values will be converted to correlation coefficient equivalents and the
-	subsequent analyses will be for r effect sizes. Bayesian analyses are possible in
-	this case.
+	The function ouput includes, whenever possible, the results of meta-analyses and
+	Bayesian analyses in four possible effect size metrics: r, Fisher's z, d, and g. Conversions
+	between effect sizes are conducted using conventional formulas (see Borenstein, 2009).
 
-    The Bayesian analyses are always conducted using correlation coefficient effect sizes. When the
-    input data are not raw data nor correlation coefficients, then the correlation coefficient
-    equivalents are computed from the input data for the analyses. 
-    
-    When the input data consists of raw datasets and the focus is on group
+	\strong{Input data:}
+	
+    When the input is a list with raw datasets and the focus is on group
     mean differences in scores (re: rawdata_type = 'indep_groups'), then it is assumed 
-    that the grouping variable is in the first column of the input data ('donnes') and that there 
-    are only two levels of the grouping variable.    
+    that the grouping variable is in the first column of the input data ('donnes') and  
+    that there are only two levels of the grouping variable.
 
-    When 'd' or 'g' are specified as the type of effect sizes for the output (using the 
-    ES_type_OUT argument), then the output is for conversions of correlation coefficient
-    effect sizes to 'd' or 'g' values using the conventional formulas for such conversions.
+    When the input is a matrix with r effect sizes (ES_type_IN = 'r'), then N should  
+    also be provided whenever possible. If r (ES) and the variance of r (ES_var) are 
+    provided but not N, then a formula is used to determine what each study N must have been: 
+    (1 - r^2) / r_var + 2.
     
-    The gvar_type_OUT argument provides a choice between d or g effect size variances whenever
-    ES_type_OUT is set to g. The reason for this option is that
-    authors of published meta-analyses sometimes report d variances when their analyses were
-    conducted on g effect sizes. This is presumably not a wise practice, but it also does
-    not make much difference in the computed values.
-    	
+    When the input is a matrix with Fisher's z effect sizes (ES_type_IN = 'z'), then  
+    either ES_var or N must also be provided. If ES_var is provided but not N,
+    then meta-analyses can be conducted but not the Bayesian analyses.
+    
+    When the input is a matrix with d or g effect sizes (ES_type_IN = 'd' or 
+    ES_type_IN = 'g'), then it is best if grp1_N and grp2_N are also provided. If 
+    only d or g (ES) and the corresponding effect size variances (ES_var) are 
+    provided, but without the group Ns, then meta-analyses can be conducted but not 
+    the Bayesian analyses.
+        
+    When the input is a matrix with odds ratios (ES_type_IN = 'OR'), then one
+    of 'CI_in_lb' or 'CI_in_ub' must also be provided, and it is helpful if
+    N is also provided. If one of 'CI_in_lb' or 'CI_in_ub' is provided but not N,
+    then meta-analyses can be conducted but not the Bayesian analyses.
+   
+	\strong{Bayesian analyses:}
+	
+    When the input is a matrix with study effect size information, then N must be provided
+    or N must be internally computable from the provided information for the Bayesian analyses
+    to be possible.
+    		
+    The Bayesian analyses are always conducted using correlation coefficient effect sizes. 
+    When the input data are not raw data nor correlation coefficients, then the correlation 
+    coefficient equivalents are computed from the input data. Conventional conversion 
+    formulae are also used when the requested output effect size metric is z, d, or g. 
+        	
 	For the "Bayes_type" argument: The Schmidt_Raju method is the computationally
 	fastest method of conducting the Bayesian analyses, but it is based on correlation
 	coefficient effect sizes, or the correlation coefficient equivalents. 
@@ -179,7 +215,7 @@
 	studies based on a meta-analysis or based on Bayesian analyses. 
 	The options are 'BAYES' or 'META', and 'META' is the default.
 	
-    Consistency and agreement rates are computed for the NHST analyses, for the 
+    \strong{Consistency and agreement rates} are computed for the NHST analyses, for the 
     updating MAs, and for the Bayesian analyses. The consistency rate is the 
     proportion of times that the most common conclusion is reached for a pool of 
     effect sizes. Three conclusions are possible for each effect size: 
@@ -194,6 +230,7 @@
     conclusion (re: the same three categories) of the final, all-studies-combined MA. 
     More detailed descriptions of the analytic methods were provided by 
     O'Connor and Ermacora (2021).
+
     
     The output from this function can be entered into the PLOT_NO.PING.PONG function in
     order to obtain a graphical display of the findings across a sequence of studies.
@@ -245,7 +282,7 @@
        {OConnor, B. P., & Ermacora, D. (2021). Unnecessary ping-pong: Illustrations of 
        	why previous findings should be taken into account when evaluating new datasets. 
        	\emph{Canadian Journal of Behavioural Science, 53(3),} 328-341. https://doi.org/10.1037/cbs0000259}       	
-\cr\cr {O'Connor, B. P., & Khattar, N. (2022, in press). Controversies regarding 
+\cr\cr {O'Connor, B. P., & Khattar, N. (2022). Controversies regarding 
 	    null hypothesis testing. In W. O'Donohue, A. Masuda, & S. O. Lilienfeld (Eds.). 
 	    \emph{Avoiding Questionable Research Practices in Applied Psychology} (pp. 147-174). 
 	    Cham, Switzerland: Springer Nature Switzerland.}    	
@@ -268,34 +305,41 @@ data_Schmidt_Raju <- data.frame(read.table(text=data_Schmidt_Raju, fill=TRUE))
 colnames(data_Schmidt_Raju) <- c('Study','N','r')
 
 NO.PING.PONG(data_Schmidt_Raju, ES_type_IN='r', ES_type_OUT='r', 
-             rma_method='REML',
+             ma_method='REML', cor_stat = 'COR',
              Bayes_type = c('Schmidt_Raju', 'generated'), 
-             prior_type='META', CI = 95,
-             ES = 'r', N = 'N', vi = NULL,
+             prior_type='META', CI_level_out = 95,
+             ES = 'r', N = 'N', ES_var = NULL,
              nitt=13000, burnin=3000, thin=10)      
                           	
 \donttest{
 	
-# using only ES & vi (the effect size & the effect size variance for each study)
+# using only ES & ES_var (the effect size & the effect size variance for each study)
 # Anxiety_Therapy
-# input data = Hedges.g & vi for each study
+# input data = Hedges.g & ES_var for each study
 # Kampmanna (2016). Meta-analysis of technology-assisted interventions for social anxiety disorder
 NO.PING.PONG(data_NPP$Anxiety_Therapy, 
-             ES = 'Hedges.g', N = NULL, vi = 'Var') 
+             ES = 'Hedges.g', N = 'N', ES_var = 'Var', ES_type_IN = 'g') 
+
+
+% NO.PING.PONG(data_NPP$Anxiety_Therapy, 
+             % ES = 'Hedges.g', N = NULL, ES_var = 'Var', ES_type_IN = 'g') 
+
+
+
 
 
 # Alcohol_Intake
 # input data = Hedges g & the Ns for the experimental & control groups
 # Prestwich (2016). Does Changing Social Influence Engender Changes in Alcohol Intake  Table 2
-NO.PING.PONG(data_NPP$Alcohol_Intake, ES_type_IN='g', 
+NO.PING.PONG(data_NPP$Alcohol_Intake, ES_type_IN='g', ES_type_OUT='g', 
              ES = 'g.Alcohol.Intake', grp1_n = 'Exp.n', grp2_n = 'Ctrl.n') 
 
 
 # Anxiety_Therapy   
 # input data = Hedges g & the N for each study
 # Kampmanna (2016). Meta-analysis of technology-assisted interventions for social anxiety disorder
-NO.PING.PONG(data_NPP$Anxiety_Therapy, ES_type_IN='g', ES_type_OUT='r',
-             ES = 'Hedges.g', N = 'N',  rma_method='FE') 
+NO.PING.PONG(data_NPP$Anxiety_Therapy, ES_type_IN='g', ES_type_OUT='g',
+             ES = 'Hedges.g', N = 'N',  ma_method='FE') 
 
 
 # Cannabis_Psychosis   
@@ -341,8 +385,7 @@ NO.PING.PONG(data_NPP$Hypomanic_BIS,
 # IAT_Discrimination
 # input data = r & N for each study
 # Oswald (2013). Predicting Ethnic and Racial Discrimination - A Meta-Analysis of IAT Studies
-NO.PING.PONG(data_NPP$IAT_Discrimination, ES_type_IN='r', 
-             ES = 'R', N = 'N') 
+NO.PING.PONG(data_NPP$IAT_Discrimination, ES_type_IN='r', ES = 'R', N = 'N') 
 
 
 # Many_Labs$Anchoring
@@ -397,8 +440,7 @@ NO.PING.PONG(data_NPP$Many_Labs$Flag_Priming,
 # input data = r & N for each study
 # Chen (2014). Association between individual differences in non-symbolic number acuity and 
 # math performance - A meta-analysis Table 1
-NO.PING.PONG(data_NPP$Math_Performance, ES_type_IN='r', 
-             ES = 'r', N = 'N') 
+NO.PING.PONG(data_NPP$Math_Performance, ES_type_IN='r', ES = 'r', N = 'N') 
 
 
 # Omega3_Depression

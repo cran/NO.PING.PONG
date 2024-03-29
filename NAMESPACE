@@ -2,16 +2,17 @@ export(NO.PING.PONG, PLOT_NO.PING.PONG, CONVERT_ES)
 
 importFrom("stats", cor, na.omit, sd, qnorm)
 
-importFrom("metafor", escalc, rma, cumul, regtest, ranktest)
+importFrom("metafor", escalc, rma, cumul, regtest, ranktest, transf.rtoz, 
+                      transf.ztor, trimfill)
 
 importFrom("MASS", mvrnorm)
 
 importFrom("MCMCglmm", MCMCglmm, summary.MCMCglmm)
 
-importFrom("graphics", "lines", "par", "points", "layout", "layout.show")
+importFrom("graphics", lines, par, points, layout, layout.show)
 
-importFrom("stats", "confint", "var", "aggregate")
+importFrom("stats", confint, var, aggregate, quantile)
 
-importFrom("grDevices", "bitmap", "bmp", "dev.off", "jpeg", "png", "tiff")
+importFrom("grDevices", bitmap, bmp, dev.off, jpeg, png, tiff)
 
 importFrom(utils, packageDescription)

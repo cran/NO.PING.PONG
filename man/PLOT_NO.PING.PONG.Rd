@@ -42,13 +42,13 @@
 	and the x axis range for the plot.}
 \value{A plot is produced, but there are no returned values.}
 \references{
-       {OConnor, B. P., & Ermacora, D. (2021). Unnecessary ping-pong: Illustrations of 
+       {O'Connor, B. P., & Ermacora, D. (2021). Unnecessary ping-pong: Illustrations of 
        	why previous findings should be taken into account when evaluating new datasets. 
        	\emph{Canadian Journal of Behavioural Science, 53(3),} 328-341. https://doi.org/10.1037/cbs0000259}       	
-\cr\cr {O'Connor, B. P., & Khattar, N. (2022, in press). Controversies regarding 
+\cr\cr {O'Connor, B. P., & Khattar, N. (2022). Controversies regarding 
 	    null hypothesis testing. In W. O'Donohue, A. Masuda, & S. O. Lilienfeld (Eds.). 
-	    \emph{Questionable research practices: Designing, conducting, and reporting sound 
-	    research in clinical psychology.} Cham, Switzerland: Springer.}    	
+	    \emph{Avoiding Questionable Research Practices in Applied Psychology} (pp. 147-174). 
+	    Cham, Switzerland: Springer Nature Switzerland.}
 }
 \author{Brian P. O'Connor}
 \examples{
@@ -69,10 +69,10 @@ colnames(data_Schmidt_Raju) <- c('Study','N','r')
 data_Schmidt_Raju <- data_Schmidt_Raju[,2:3]  
 
 nppOutput <- NO.PING.PONG(data_Schmidt_Raju, ES_type_IN='r', ES_type_OUT='r', 
-                          rma_method='REML',
+                          ma_method='REML',
                           Bayes_type = c('Schmidt_Raju', 'generated'), 
-                          prior_type='META', CI = 95,
-                          ES = 'r', N = 'N', vi = NULL,
+                          prior_type='META', CI_level_in = 95,
+                          ES = 'r', N = 'N', ES_var = NULL,
                           nitt=13000, burnin=3000, thin=10, verbose=TRUE)      
 
 PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_SR','BAYES_GEN'))
@@ -80,9 +80,9 @@ PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_SR','BAYES_G
 
 \donttest{ 
 # Cannabis Psychosis data
-nppOutput <- NO.PING.PONG(data_NPP$Cannabis_Psychosis, ES_type_IN='d', rma_method='REML', CI = 95,
+nppOutput <- NO.PING.PONG(data_NPP$Cannabis_Psychosis, ES_type_IN='d', ma_method='REML',
                           Bayes_type = c('Schmidt_Raju', 'generated'), prior_type='META',
-                          ES = 'Std_diff_in_mean', N = 'N', vi = 'Variance',
+                          ES = 'Std_diff_in_mean', N = 'N', ES_var = NULL, #ES_var = 'Variance',
                           nitt=13000, burnin=3000, thin=10, verbose=TRUE) 
 
 PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META'))
@@ -93,10 +93,10 @@ PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN','BAYES_
 # PopulationR.20 data (has raw data)
 nppOutput <- NO.PING.PONG(data_NPP$PopulationR.20, ES_type_OUT='r',
                           rawdata_type = 'for_correl',
-                          rma_method='REML',
+                          ma_method='REML',
                           Bayes_type = c('generated', 'Schmidt_Raju'), 
-                          prior_type='META', CI = 95,
-                          ES = 'r', N = 'N', vi = NULL,
+                          prior_type='META', CI_level_in = 95,
+                          ES = 'r', N = 'N', ES_var = NULL,
                           nitt=13000, burnin=3000, thin=10, verbose=TRUE) 
                          
 PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN','BAYES_RAW'))
@@ -106,17 +106,9 @@ PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN','BAYES_
 # raw data for paired samples             
 nppOutput <- 
 NO.PING.PONG(donnes=data_NPP$Paired_Samples, 
-                         ES_type_IN = NULL, ES_type_OUT = 'd', 
-                         rawdata_type = 'paired_samples', 
-                         rma_method = 'REML',
-                         Bayes_type = c('Schmidt_Raju', 'generated', 'raw'), 
-                         prior_type = 'META', CI = 95,
-                         ES = NULL, N = NULL, vi = NULL,
-                         grp1_mn = NULL, grp1_sd = NULL, grp1_n = NULL, 
-                         grp2_mn = NULL, grp2_sd = NULL, grp2_n = NULL, 
-                         gvar_type_OUT = 'd',
-                         paired_samples_ES_type = 'SMCRH',
-                         nitt = 13000, burnin = 3000, thin = 10, verbose = TRUE) 
+             rawdata_type = 'paired_samples',
+             ES_type_OUT = 'd',
+             paired_samples_ES_type = 'SMCRH') 
 
 PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META'))
 PLOT_NO.PING.PONG(nppOutput, plot_this = c('NHST','CUM_META','BAYES_GEN'))

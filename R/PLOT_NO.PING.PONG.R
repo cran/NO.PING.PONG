@@ -10,11 +10,23 @@ PLOT_NO.PING.PONG <- function(nopingpongOutput,
 # first, identify what data appears in nopingpongOutput
 noms <- names(nopingpongOutput)
 noms2 <- c()
-if ( is.element('results_NHST',      noms) )   noms2 <- c(noms2, 'NHST') 
-if ( is.element('results_CUM_META',  noms) )   noms2 <- c(noms2, 'CUM_META') 
-if ( is.element('results_BAYES_SR',  noms) )   noms2 <- c(noms2, 'BAYES_SR') 
-if ( is.element('results_BAYES_GEN', noms) )   noms2 <- c(noms2, 'BAYES_GEN') 
-if ( is.element('results_BAYES_RAW', noms) )   noms2 <- c(noms2, 'BAYES_RAW') 
+
+# if ( is.element('results_NHST',      noms) )   noms2 <- c(noms2, 'NHST') 
+# if ( is.element('results_CUM_META',  noms) )   noms2 <- c(noms2, 'CUM_META') 
+# if ( is.element('results_BAYES_SR',  noms) )   noms2 <- c(noms2, 'BAYES_SR') 
+# if ( is.element('results_BAYES_GEN', noms) )   noms2 <- c(noms2, 'BAYES_GEN') 
+# if ( is.element('results_BAYES_RAW', noms) )   noms2 <- c(noms2, 'BAYES_RAW') 
+
+if ( length(nopingpongOutput$results_NHST) > 1)        noms2 <- c(noms2, 'NHST') 
+if ( length(nopingpongOutput$results_CUM_META) > 1)    noms2 <- c(noms2, 'CUM_META') 
+if ( length(nopingpongOutput$results_BAYES_SR) > 1)    noms2 <- c(noms2, 'BAYES_SR') 
+if ( length(nopingpongOutput$results_BAYES_GEN) > 1)   noms2 <- c(noms2, 'BAYES_GEN') 
+if ( length(nopingpongOutput$results_BAYES_RAW) > 1)   noms2 <- c(noms2, 'BAYES_RAW') 
+
+# length(nopingpongOutput$results_BAYES_RA)
+
+# length(nopingpongOutput$results_NHST)
+
 
 # then find the common elements
 # plot_this = c('NHST','CUM_META')
@@ -28,17 +40,17 @@ noms3 <- paste("results_", noms2, sep='')
  
 # get the min & max LBs & UBs
 dum <- nopingpongOutput[noms3[1]][[1]]
-minLB <- min(dum[,'ES.lb'])
-maxUB <- max(dum[,'ES.ub'])
+minLB <- min(dum[,'ES_lb'])
+maxUB <- max(dum[,'ES_ub'])
 
 if (length(noms3) > 1) {
 	for (lupeL in 2:length(noms3)) {		
 		
 		dum <- nopingpongOutput[noms3[lupeL]][[1]]
 				
-		if (min(dum[,'ES.lb']) < minLB)  minLB <- min(dum[,'ES.lb'])
+		if (min(dum[,'ES_lb']) < minLB)  minLB <- min(dum[,'ES_lb'])
 					
-		if (max(dum[,'ES.ub']) > maxUB)  maxUB <- max(dum[,'ES.ub'])
+		if (max(dum[,'ES_ub']) > maxUB)  maxUB <- max(dum[,'ES_ub'])
 	}
 }
 
@@ -74,6 +86,8 @@ if (plot_save == TRUE) {
 		bmp(paste("Figure - ",plot_title,".bmp",sep=""), height=7, width=9, units='in', res=1200, pointsize=12)
 }
 
+oldpar <- par(no.readonly = TRUE)
+on.exit(par(oldpar))
 
 if (length(plot_this_2) == 1)  par(mfrow=c(1,1), pty="m", mar=c(3,2,3,2) + 2.6)
 
@@ -86,8 +100,8 @@ if (length(plot_this_2) == 4)  par(mfrow=c(1,4), pty="m", mar=c(3,2,3,2) + 2.6)
 if (length(plot_this_2) == 5)  par(mfrow=c(1,5), pty="m", mar=c(3,2,3,2) + 2.6)
 
 
-oldpar <- par(no.readonly = TRUE)
-on.exit(par(oldpar))
+# oldpar <- par(no.readonly = TRUE)
+# on.exit(par(oldpar))
 
 
 if ( is.element('NHST', plot_this_2) )  { 
@@ -97,7 +111,7 @@ if ( is.element('NHST', plot_this_2) )  {
 		ylim=c(max(results_NHST[,'Study']),1), xlim=Xrange) 
 		lines(c(0,0), c(max((results_NHST[,'Study'])),1), col=2, lty="dashed") 
 		for (luper in 1:nrow(results_NHST)) { 
-			lines(rbind(results_NHST[luper,'ES.lb'],results_NHST[luper,'ES.ub']), c(luper,luper), lwd=1)
+			lines(rbind(results_NHST[luper,'ES_lb'],results_NHST[luper,'ES_ub']), c(luper,luper), lwd=1)
 			points(results_NHST[luper,'ES'], results_NHST[luper,'Study'], pch=19, cex=.5) 
 		}
 }
@@ -109,7 +123,7 @@ if ( is.element('CUM_META', plot_this_2) ) {
 		ylim=c(max((results_CUM_META[,'Study'])),1), xlim=Xrange)
 		lines(c(0,0), c(max((results_CUM_META[,'Study'])),1), col=2, lty="dashed") 
 		for (luper in 1:nrow(results_CUM_META)) { 
-			lines(rbind(results_CUM_META[luper,'ES.lb'],results_CUM_META[luper,'ES.ub']), c(luper,luper), lwd=1)
+			lines(rbind(results_CUM_META[luper,'ES_lb'],results_CUM_META[luper,'ES_ub']), c(luper,luper), lwd=1)
 			points(results_CUM_META[luper,'ES'], results_CUM_META[luper,'Study'], pch=19, cex=.5) 
 		}
 }
@@ -121,7 +135,7 @@ if ( is.element('BAYES_SR', plot_this_2) ) {
 		ylim=c(max((results_BAYES_SR[,'Study'])),1), xlim=Xrange)
 		lines(c(0,0), c(max((results_BAYES_SR[,'Study'])),1), col=2, lty="dashed") 
 		for (luper in 1:nrow(results_BAYES_SR)) { 
-			lines(rbind(results_BAYES_SR[luper,'ES.lb'],results_BAYES_SR[luper,'ES.ub']), c(luper,luper), lwd=1)
+			lines(rbind(results_BAYES_SR[luper,'ES_lb'],results_BAYES_SR[luper,'ES_ub']), c(luper,luper), lwd=1)
 			points(results_BAYES_SR[luper,'ES'], results_BAYES_SR[luper,'Study'], pch=19, cex=.5) 
 		}
 }
@@ -133,7 +147,7 @@ if ( is.element('BAYES_GEN', plot_this_2) ) {
 		ylim=c(max((results_BAYES_GEN[,'Study'])),1), xlim=Xrange)
 		lines(c(0,0), c(max((results_BAYES_GEN[,'Study'])),1), col=2, lty="dashed") 
 		for (luper in 1:nrow(results_BAYES_GEN)) { 
-			lines(rbind(results_BAYES_GEN[luper,'ES.lb'],results_BAYES_GEN[luper,'ES.ub']), c(luper,luper), lwd=1)
+			lines(rbind(results_BAYES_GEN[luper,'ES_lb'],results_BAYES_GEN[luper,'ES_ub']), c(luper,luper), lwd=1)
 			points(results_BAYES_GEN[luper,'ES'], results_BAYES_GEN[luper,'Study'], pch=19, cex=.5) 
 		}
 }
@@ -145,7 +159,7 @@ if ( is.element('BAYES_RAW', plot_this_2) ) {
 		ylim=c(max((results_BAYES_RAW[,'Study'])),1), xlim=Xrange)
 		lines(c(0,0), c(max((results_BAYES_RAW[,'Study'])),1), col=2, lty="dashed") 
 		for (luper in 1:nrow(results_BAYES_RAW)) { 
-			lines(rbind(results_BAYES_RAW[luper,'ES.lb'],results_BAYES_RAW[luper,'ES.ub']), c(luper,luper), lwd=1)
+			lines(rbind(results_BAYES_RAW[luper,'ES_lb'],results_BAYES_RAW[luper,'ES_ub']), c(luper,luper), lwd=1)
 			points(results_BAYES_RAW[luper,'ES'], results_BAYES_RAW[luper,'Study'], pch=19, cex=.5) 
 		}
 }

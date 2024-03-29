@@ -158,10 +158,10 @@ findings from a meta-analysis of
 \cr\cr {O'Connor, B. P., & Ermacora, D. (2021). Unnecessary ping-pong: Illustrations of 
        	why previous findings should be taken into account when evaluating new datasets. 
        	\emph{Canadian Journal of Behavioural Science, 53(3),} 328-341. https://doi.org/10.1037/cbs0000259}   
-\cr\cr {O'Connor, B. P., & Khattar, N. (2022, in press). Controversies regarding 
+\cr\cr {O'Connor, B. P., & Khattar, N. (2022). Controversies regarding 
 	    null hypothesis testing. In W. O'Donohue, A. Masuda, & S. O. Lilienfeld (Eds.). 
-	    \emph{Questionable research practices: Designing, conducting, and reporting sound 
-	    research in clinical psychology.} Cham, Switzerland: Springer.}   
+	    \emph{Avoiding Questionable Research Practices in Applied Psychology} (pp. 147-174). 
+	    Cham, Switzerland: Springer Nature Switzerland.}
 \cr\cr {Oswald, F. L., Mitchell, G., Blanton, H., Jaccard, J., & Tetlock, P. E. (2013). Predicting 
    ethnic and racial discrimination: A meta-analysis of IAT criterion studies. 
    \emph{Journal of Personality and Social Psychology, 105,} 171-192.}   
